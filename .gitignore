@@ -1,0 +1,17 @@
+# File di build
+build/
+app/build/
+captures/
+
+# File di Android Studio / IntelliJ
+.idea/
+*.iml
+.gradle/
+local.properties
+
+# File di log e temporanei
+*.log
+.DS_Store
+
+# Esclusioni specifiche per le mappe
+osmdroid/

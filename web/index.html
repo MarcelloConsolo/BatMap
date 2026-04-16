@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <title>BatMaps - Dashboard</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f7f6; }
+        #map { height: 100vh; width: 100%; }
+        #overlay {
+            position: fixed; top: 20px; right: 20px;
+            background: white; padding: 15px; border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            z-index: 1000; min-width: 220px; border-top: 5px solid #2c3e50;
+        }
+        .popup-content b { color: #2c3e50; font-size: 1.1em; }
+        .popup-content i { color: #7f8c8d; }
+        hr { border: 0; border-top: 1px solid #eee; margin: 10px 0; }
+    </style>
+</head>
+<body>
+<div id="overlay">
+    <h2 style="margin:0; font-size: 1.4em;">🦇 BatMaps</h2>
+    <div id="status" style="font-size: 0.9em; color: #666;">Caricamento...</div>
+    <div id="counter" style="font-weight:bold; color: #27ae60; margin-top:5px; font-size: 1.1em;">Segnalazioni: 0</div>
+</div>
+<div id="map"></div>
+<script>
+    const map = L.map('map').setView([45.4064, 11.8768], 8);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
+
+    let markersLayer = L.layerGroup().addTo(map);
+    let totalCount = 0;
+
+    function formatExcelDate(val) {
+        if (!val) return "";
+        if (!isNaN(val) && val > 40000) return new Date((val - 25569) * 86400 * 1000).toLocaleDateString('it-IT');
+        return val;
+    }
+
+    function formatExcelTime(val) {
+        if (!val && val !== 0) return "";
+        if (!isNaN(val) && val < 1) {
+            const ts = Math.round(val * 86400);
+            const h = Math.floor(ts / 3600).toString().padStart(2, '0');
+            const m = Math.floor((ts % 3600) / 60).toString().padStart(2, '0');
+            return h + ":" + m;
+        }
+        let s = val.toString().trim();
+        return s.includes(":") ? s.split(":").slice(0,2).join(":") : s;
+    }
+
+    async function processFile(fileName) {
+        try {
+            const response = await fetch(fileName);
+            if (!response.ok) return false;
+            const data = await response.arrayBuffer();
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+            let headerIdx = rows.findIndex(r => r && r.some(c => {
+                const s = String(c||"").toLowerCase().trim();
+                return s === "latitudine" || s === "latitude" || s === "lat";
+            }));
+            if (headerIdx === -1) headerIdx = 0;
+
+            const h = rows[headerIdx].map(v => String(v||"").toLowerCase().trim());
+
+            const findCol = (targets) => {
+                for(let t of targets) {
+                    let idx = h.findIndex(v => v === t || v.includes(t));
+                    if(idx !== -1) return idx;
+                }
+                return -1;
+            };
+
+            const c = {
+                lat: findCol(['latitudine', 'latitude', 'lat']),
+                lon: findCol(['longitudine', 'longitude', 'lon', 'long']),
+                sp: h.findIndex(v => v.includes("specie")),
+                loc: h.findIndex(v => v.includes("localit")),
+                com: h.findIndex(v => v.includes("comune")),
+                pr: findCol(['provincia', 'sigla', 'prov']),
+                dt: h.findIndex(v => v.includes("data")),
+                tm: h.findIndex(v => v.includes("ora")),
+                st: h.findIndex(v => v.includes("stato")),
+                nt: h.findIndex(v => v.includes("note") || v.includes("condizioni") || v.includes("recupero"))
+            };
+
+            for (let i = headerIdx + 1; i < rows.length; i++) {
+                const r = rows[i];
+                if (!r || r[c.lat] === undefined || r[c.lat] === "") continue;
+
+                let lat = parseFloat(String(r[c.lat]).replace(',', '.'));
+                let lon = parseFloat(String(r[c.lon]).replace(',', '.'));
+
+                if (!isNaN(lat) && !isNaN(lon) && lat !== 0) {
+                    const info = {
+                        specie: c.sp !== -1 ? (r[c.sp] || "Pipistrello") : "Pipistrello",
+                        localita: (c.loc !== -1 ? r[c.loc] : "") || "",
+                        comune: (c.com !== -1 ? r[c.com] : "") || "",
+                        provincia: (c.pr !== -1 ? r[c.pr] : "") || "",
+                        data: c.dt !== -1 ? formatExcelDate(r[c.dt]) : "",
+                        ora: c.tm !== -1 ? formatExcelTime(r[c.tm]) : "",
+                        stato: c.st !== -1 ? (r[c.st] || "") : "",
+                        note: c.nt !== -1 ? (r[c.nt] || "") : ""
+                    };
+
+                    const cleanProv = String(info.provincia).replace(/[() ]/g, '').toUpperCase();
+
+                    const popup = `
+                        <div class="popup-content">
+                            <b>${info.specie}</b><br>
+                            <i>${info.data} - ore ${info.ora}</i>
+                            <hr>
+                            <b>Località:</b> ${info.localita || "-"}<br>
+                            <b>Comune:</b> ${info.comune || "-"}<br>
+                            <b>Provincia:</b> ${cleanProv || "-"}<br>
+                            <hr style="border-top: 1px dashed #eee">
+                            <b>Stato:</b> ${info.stato || "-"}<br>
+                            ${info.note ? `<b>Note:</b> ${info.note}` : ''}
+                        </div>
+                    `;
+                    L.marker([lat, lon]).addTo(markersLayer).bindPopup(popup);
+                    totalCount++;
+                }
+            }
+            document.getElementById('counter').innerText = `Segnalazioni: ${totalCount}`;
+            return true;
+        } catch (e) { console.error(e); return false; }
+    }
+
+    async function init() {
+        document.getElementById('status').innerText = "Caricamento file...";
+
+        // Carica Pipistrelli 2025 (il principale)
+        await processFile('Pipistrelli 2025.xlsx');
+
+        // Cerca altri anni (es. 2020-2024 e futuri)
+        const years = [2020, 2021, 2022, 2023, 2024, 2026];
+        for(let y of years) {
+            await processFile(`Pipistrelli ${y}.xlsx`);
+        }
+
+        document.getElementById('status').innerText = "✅ Tutti i file caricati";
+    }
+    init();
+</script>
+</body>
+</html>
