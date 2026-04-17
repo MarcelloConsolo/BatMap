@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <title>BatMaps 2025 - Versione 17.2</title>
+    <title>BatMaps 2025 - Versione 17.3</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -24,7 +24,6 @@
         .label { font-weight: bold; color: #7f8c8d; width: 85px; }
         .valore { color: #2c3e50; font-weight: 500; }
         .specie-title { color: #2980b9; font-size: 1.2em; font-weight: bold; display: block; }
-        .date-time-subtitle { font-size: 0.85em; color: #95a5a6; font-style: italic; margin-top: 4px; margin-bottom: 8px; }
     </style>
 </head>
 <body>
@@ -38,19 +37,15 @@
     const map = L.map('map').setView([45.5479, 11.5446], 9);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    const comuniDB = {
-        "vicenza": "VI", "padova": "PD", "verona": "VR", "venezia": "VE", "treviso": "TV", "rovigo": "RO", "belluno": "BL",
-        "mestre": "VE", "eraclea": "VE", "jesolo": "VE", "bassano": "VI", "asiago": "VI", "arzignano": "VI"
-    };
-
-    function getProvincia(rigaTesto, comune, localita) {
+    function getProvincia(rigaTesto) {
         let t = String(rigaTesto).toLowerCase();
-        let c = String(comune || "").toLowerCase();
-        let l = String(localita || "").toLowerCase();
         if (t.includes("padova")) return "PD";
-        if (t.includes("venezia") || t.includes("eraclea") || t.includes("mestre")) return "VE";
-        if (t.includes("vicenza") || t.includes("bassano") || t.includes("asiago")) return "VI";
-        for (let nome in comuniDB) { if (c.includes(nome) || l.includes(nome)) return comuniDB[nome]; }
+        if (t.includes("venezia") || t.includes("eraclea") || t.includes("mestre") || t.includes("jesolo")) return "VE";
+        if (t.includes("verona")) return "VR";
+        if (t.includes("treviso")) return "TV";
+        if (t.includes("rovigo") || t.includes("adria")) return "RO";
+        if (t.includes("belluno")) return "BL";
+        if (t.includes("vicenza") || t.includes("bassano") || t.includes("asiago") || t.includes("schio")) return "VI";
         return "-";
     }
 
@@ -74,7 +69,7 @@
                 return -1;
             };
 
-            const c = { specie: getCol(["specie"]), data: getCol(["data"]), loc: getCol(["località", "localit"]), com: getCol(["comune"]), prov: getCol(["provincia"]), lat: getCol(["lat"]), lon: getCol(["lon"]) };
+            const c = { specie: getCol(["specie"]), loc: getCol(["località", "localit"]), com: getCol(["comune"]), prov: getCol(["provincia"]), lat: getCol(["lat"]), lon: getCol(["lon"]) };
 
             const markers = L.markerClusterGroup();
             let count = 0;
@@ -82,11 +77,7 @@
             dataRows.forEach(row => {
                 if (!row || row.length < 3) return;
                 let rigaTesto = row.join(" ");
-                let vCom = String(row[c.com] || "").trim();
-                let vLoc = String(row[c.loc] || "").trim();
-                let vProv = String(row[c.prov] || "").trim();
-
-                if (!vProv || vProv === "-" || vProv === "nan") vProv = getProvincia(rigaTesto, vCom, vLoc);
+                let vProv = getProvincia(rigaTesto);
 
                 let lat = parseFloat(String(row[c.lat] || 0).replace(",", "."));
                 let lon = parseFloat(String(row[c.lon] || 0).replace(",", "."));
@@ -96,11 +87,13 @@
                     else if (vProv === "VE") { lat = 45.4408; lon = 12.3155; }
                     else if (vProv === "VR") { lat = 45.4384; lon = 10.9916; }
                     else if (vProv === "TV") { lat = 45.6669; lon = 12.2431; }
+                    else if (vProv === "RO") { lat = 45.0711; lon = 11.7907; }
+                    else if (vProv === "BL") { lat = 46.1425; lon = 12.2167; }
                     else { lat = 45.5479; lon = 11.5446; }
-                    lat += (Math.random()-0.5)*0.05; lon += (Math.random()-0.5)*0.05;
+                    lat += (Math.random()-0.5)*0.1; lon += (Math.random()-0.5)*0.1;
                 }
 
-                const popup = `<div style="min-width:200px"><span class="specie-title">${row[c.specie] || "Pipistrello"}</span><table class="popup-table"><tr><td class="label">Comune:</td><td>${vCom}</td></tr><tr><td class="label">Provincia:</td><td>${vProv}</td></tr></table></div>`;
+                const popup = `<div style="min-width:200px"><span class="specie-title">${row[c.specie] || "Pipistrello"}</span><table class="popup-table"><tr><td class="label">Comune:</td><td>${row[c.com] || "-"}</td></tr><tr><td class="label">Provincia:</td><td>${vProv}</td></tr></table></div>`;
                 markers.addLayer(L.marker([lat, lon]).bindPopup(popup));
                 count++;
             });
