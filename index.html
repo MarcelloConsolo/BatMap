@@ -17,7 +17,8 @@
         #overlay {
             position: fixed; top: 15px; right: 15px;
             background: white; padding: 15px; border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2); z-index: 1000;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            z-index: 1000;
             border-left: 5px solid #2980b9;
             width: 230px;
         }
@@ -33,9 +34,9 @@
 <body>
 
 <div id="overlay">
-    <b style="font-size:1.2em; color: #2c3e50;">BatMaps 2025</b><br>
-    <div id="status" style="color: #7f8c8d; font-size: 0.9em; margin: 5px 0;">Sincronizzazione Excel...</div>
-    <div id="counter" style="font-size: 1.2em; font-weight: bold; color: #27ae60; margin-bottom: 10px;"></div>
+    <b style="font-size:1.2em; color:#2c3e50;">BatMaps 2025</b><br>
+    <div id="status" style="color:#7f8c8d;font-size:0.9em;margin:5px 0;">Sincronizzazione Excel...</div>
+    <div id="counter" style="font-size:1.2em;font-weight:bold;color:#27ae60;margin-bottom:10px;"></div>
     <div id="filter-container" style="display:none;"></div>
 </div>
 
@@ -53,14 +54,14 @@ function formatTime(val) {
 
     if (!isNaN(num) && num > 0 && num < 1) {
         let totalSeconds = Math.round(num * 24 * 3600);
-        let hours = Math.floor(totalSeconds / 3600);
-        let minutes = Math.floor((totalSeconds % 3600) / 60);
-        return (hours < 10 ? "0" : "") + hours + ":" + (minutes < 10 ? "0" : "") + minutes;
+        let h = Math.floor(totalSeconds / 3600);
+        let m = Math.floor((totalSeconds % 3600) / 60);
+        return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m;
     }
 
     if (s.includes(":")) {
         let parts = s.split(":");
-        return parts[0].padStart(2, '0') + ":" + parts[1].padStart(2, '0');
+        return parts[0].padStart(2,'0') + ":" + parts[1].padStart(2,'0');
     }
 
     return s;
@@ -70,44 +71,42 @@ async function init() {
     try {
         let dbComuni = {};
         try {
-            const dbResp = await fetch('web/comuni_italiani.json');
-            dbComuni = await dbResp.json();
-        } catch(e) {
-            const dbResp = await fetch('comuni_italiani.json');
-            dbComuni = await dbResp.json();
+            dbComuni = await (await fetch('web/comuni_italiani.json')).json();
+        } catch {
+            dbComuni = await (await fetch('comuni_italiani.json')).json();
         }
 
         let response;
         try {
             response = await fetch('web/Pipistrelli 2025.xlsx?v=' + Date.now());
-        } catch(e) {
+        } catch {
             response = await fetch('Pipistrelli 2025.xlsx?v=' + Date.now());
         }
 
         const data = new Uint8Array(await response.arrayBuffer());
-        const workbook = XLSX.read(data, {type: 'array'});
+        const workbook = XLSX.read(data, {type:'array'});
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(sheet, {header: 1});
+        const rows = XLSX.utils.sheet_to_json(sheet, {header:1});
 
         let hIdx = 0;
-        for(let i=0; i<rows.length && i<20; i++) {
-            if(rows[i] && rows[i].some(c =>
-                String(c || "").toLowerCase().includes("speci") ||
-                String(c || "").toLowerCase().includes("data")
+        for (let i=0;i<rows.length&&i<20;i++) {
+            if (rows[i]?.some(c =>
+                String(c||"").toLowerCase().includes("speci") ||
+                String(c||"").toLowerCase().includes("data")
             )) {
                 hIdx = i;
                 break;
             }
         }
 
-        const header = rows[hIdx].map(h => String(h || "").toLowerCase().trim());
-        const dataRows = rows.slice(hIdx + 1);
+        const header = rows[hIdx].map(h => String(h||"").toLowerCase().trim());
+        const dataRows = rows.slice(hIdx+1);
 
         const getCol = (targets) => {
             targets = targets.map(t => t.toLowerCase());
-            for (let i = 0; i < header.length; i++) {
+            for (let i=0;i<header.length;i++) {
                 for (let t of targets) {
-                    if (header[i] && header[i].includes(t)) return i;
+                    if (header[i]?.includes(t)) return i;
                 }
             }
             return -1;
@@ -132,39 +131,45 @@ async function init() {
         dataRows.forEach(row => {
             if (!row || row.length < 2) return;
 
-            let vSpecie = String(row[c.specie] || "Pipistrello").trim();
-            let vComRaw = String(row[c.com] || "").trim();
-            let vLocRaw = String(row[c.loc] || "").trim();
-            let vProv = String(row[c.prov] || "").trim().toUpperCase();
-            let vOra = formatTime(row[c.ora]);
+            const vSpecie = String(row[c.specie] || "Pipistrello").trim();
+            const vComRaw = String(row[c.com] || "").trim();
+            const vLocRaw = String(row[c.loc] || "").trim();
+            const vProv = String(row[c.prov] || "").trim().toUpperCase();
+            const vOra = formatTime(row[c.ora]);
 
             let vData = "-";
             if (row[c.data]) {
                 if (typeof row[c.data] === "number") {
-                    vData = new Date((row[c.data] - 25569) * 86400 * 1000).toLocaleDateString('it-IT');
+                    vData = new Date((row[c.data]-25569)*86400*1000).toLocaleDateString("it-IT");
                 } else {
                     vData = String(row[c.data]).split("T")[0];
                 }
             }
 
-            let lat = parseFloat(String(row[c.lat] || 0).replace(",", "."));
-            let lon = parseFloat(String(row[c.lon] || 0).replace(",", "."));
+            let lat = parseFloat(String(row[c.lat]||"").replace(",","."));
+            let lon = parseFloat(String(row[c.lon]||"").replace(",","."));
 
+            // 🔥 FIX IMPORTANTE: niente random, solo fallback reale
             if (isNaN(lat) || isNaN(lon)) {
-                lat = 45.7 + (Math.random() - 0.5) * 0.08;
-                lon = 9.67 + (Math.random() - 0.5) * 0.08;
+                const key = vComRaw.toLowerCase().trim();
+                if (dbComuni[key]) {
+                    lat = dbComuni[key].lat;
+                    lon = dbComuni[key].lon;
+                } else {
+                    return; // NON creare marker se non localizzabile
+                }
             }
 
             const marker = L.marker([lat, lon]).bindPopup(`
                 <div style="min-width:210px">
                     <span class="specie-title">${vSpecie}</span>
-                    <div class="date-subtitle">Segnalazione del ${vData} ${vOra ? 'ore '+vOra : ''}</div>
+                    <div class="date-subtitle">Segnalazione del ${vData} ${vOra ? "ore "+vOra : ""}</div>
                     <table class="popup-table">
-                        <tr><td class="label">Località:</td><td class="valore">${vLocRaw || ""}</td></tr>
-                        <tr><td class="label">Comune:</td><td class="valore">${vComRaw || ""}</td></tr>
-                        <tr><td class="label">Provincia:</td><td class="valore">${vProv || ""}</td></tr>
-                        <tr><td class="label">Stato:</td><td class="valore">${String(row[c.stato] || "")}</td></tr>
-                        <tr><td class="label">Condizioni:</td><td class="valore">${String(row[c.note] || "")}</td></tr>
+                        <tr><td class="label">Località:</td><td class="valore">${vLocRaw||""}</td></tr>
+                        <tr><td class="label">Comune:</td><td class="valore">${vComRaw||""}</td></tr>
+                        <tr><td class="label">Provincia:</td><td class="valore">${vProv||""}</td></tr>
+                        <tr><td class="label">Stato:</td><td class="valore">${String(row[c.stato]||"")}</td></tr>
+                        <tr><td class="label">Condizioni:</td><td class="valore">${String(row[c.note]||"")}</td></tr>
                     </table>
                 </div>
             `);
@@ -179,12 +184,12 @@ async function init() {
             map.fitBounds(allMarkers.map(m => [m.lat, m.lon]));
         }
 
-        document.getElementById('status').innerText = "✅ Sincronizzato";
-        document.getElementById('counter').innerText = "Totale: " + allMarkers.length;
+        document.getElementById("status").innerText = "✅ Sincronizzato";
+        document.getElementById("counter").innerText = "Totale: " + allMarkers.length;
 
     } catch (e) {
         console.error(e);
-        document.getElementById('status').innerText = "❌ Errore";
+        document.getElementById("status").innerText = "❌ Errore";
     }
 }
 
