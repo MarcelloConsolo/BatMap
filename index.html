@@ -4,9 +4,11 @@
     <title>BatMaps 2025 - Versione 17.65</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
@@ -14,13 +16,16 @@
     <style>
         body { margin: 0; padding: 0; font-family: sans-serif; background: #f4f7f6; }
         #map { height: 100vh; width: 100%; }
+
         #overlay {
             position: fixed; top: 15px; right: 15px;
             background: white; padding: 15px; border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2); z-index: 1000;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            z-index: 1000;
             border-left: 5px solid #2980b9;
             width: 230px;
         }
+
         .popup-table { font-size: 13px; border-collapse: collapse; width: 100%; margin-top: 5px; }
         .popup-table td { padding: 5px 0; border-bottom: 1px solid #eee; vertical-align: top; }
         .label { font-weight: bold; color: #7f8c8d; width: 90px; }
@@ -42,6 +47,7 @@
 
 <script>
 const map = L.map('map').setView([45.4, 11.8], 8);
+
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 function formatTime(val) {
@@ -141,7 +147,6 @@ async function init() {
             let vProv = (vProvOrig && vProvOrig !== "-") ? vProvOrig : res.prov;
             let vComDisp = (vComRaw && vComRaw !== "-") ? vComRaw : res.nome;
 
-            // ✔ FIX LOCALITÀ
             let vLocDisp = vLocRaw && vLocRaw !== "" ? vLocRaw : vComDisp;
 
             let vData = "-";
@@ -157,6 +162,22 @@ async function init() {
                 lon = res.lon;
             }
 
+            // ✔ COLORI MARKER RIPRISTINATI
+            let vStato = String(row[c.stato] || "").toLowerCase();
+            let markerColor = "blue";
+            if (vStato.includes("liberato") || vStato.includes("recuperato")) markerColor = "green";
+            else if (vStato.includes("morto")) markerColor = "red";
+            else if (vStato.includes("degenza")) markerColor = "yellow";
+
+            const customIcon = new L.Icon({
+                iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${markerColor}.png`,
+                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                shadowSize: [41, 41]
+            });
+
             const popup = `
                 <div style="min-width:210px">
                     <span class="specie-title">${vSpecie}</span>
@@ -166,10 +187,12 @@ async function init() {
                         <tr><td class="label">Comune:</td><td class="valore">${vComDisp}</td></tr>
                         <tr><td class="label">Provincia:</td><td class="valore">${vProv}</td></tr>
                         <tr><td class="label">Stato:</td><td class="valore">${row[c.stato] || "-"}</td></tr>
+                        <tr><td class="label">Condizioni:</td><td class="valore">${row[c.note] || "-"}</td></tr>
                     </table>
                 </div>`;
 
-            const marker = L.marker([lat, lon]).bindPopup(popup);
+            const marker = L.marker([lat, lon], {icon: customIcon}).bindPopup(popup);
+
             allMarkers.push({ marker, lat, lon });
             markers.addLayer(marker);
         });
