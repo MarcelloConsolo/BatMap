@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <title>BatMaps 2025 - Versione 17.7</title>
+    <title>BatMaps 2025 - Versione 17.8</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -35,18 +35,32 @@
 </div>
 <div id="map"></div>
 <script>
-    const map = L.map('map').setView([45.5479, 11.5446], 9);
+    const map = L.map('map').setView([42.0, 12.5], 6); // Vista più ampia sull'Italia
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    function getProvincia(riga) {
+    const coordsDB = {
+        "PD": [45.4064, 11.8768], "VE": [45.4408, 12.3155], "VR": [45.4384, 10.9916], "TV": [45.6669, 12.2431],
+        "RO": [45.0711, 11.7907], "BL": [46.1425, 12.2167], "VI": [45.5479, 11.5446], "BG": [45.6983, 9.6773],
+        "RG": [36.9265, 14.7302], "MI": [45.4642, 9.1900], "RM": [41.9028, 12.4964], "NA": [40.8518, 14.2681],
+        "TO": [45.0703, 7.6869], "BO": [44.4949, 11.3426], "BS": [45.5416, 10.2118], "TN": [46.0679, 11.1211]
+    };
+
+    function getProvSigla(riga) {
         let t = riga.toLowerCase();
         if (t.includes("padova")) return "PD";
-        if (t.includes("venezia") || t.includes("eraclea") || t.includes("mestre") || t.includes("jesolo")) return "VE";
+        if (t.includes("venezia") || t.includes("eraclea") || t.includes("mestre")) return "VE";
         if (t.includes("verona")) return "VR";
         if (t.includes("treviso")) return "TV";
-        if (t.includes("rovigo") || t.includes("adria")) return "RO";
-        if (t.includes("belluno")) return "BL";
         if (t.includes("vicenza") || t.includes("bassano") || t.includes("asiago")) return "VI";
+        if (t.includes("bergamo")) return "BG";
+        if (t.includes("ragusa")) return "RG";
+        if (t.includes("milano")) return "MI";
+        if (t.includes("roma")) return "RM";
+        if (t.includes("napoli")) return "NA";
+        if (t.includes("torino")) return "TO";
+        if (t.includes("bologna")) return "BO";
+        if (t.includes("brescia")) return "BS";
+        if (t.includes("trento")) return "TN";
         return "-";
     }
 
@@ -108,7 +122,8 @@
                 let vOra = formatTime(row[c.ora]);
 
                 let rigaTesto = row.join(" ");
-                if (!vProv || vProv === "-" || vProv === "nan" || vProv.length > 2) vProv = getProvincia(rigaTesto);
+                let sigla = getProvSigla(rigaTesto);
+                if (vProv.length !== 2) vProv = sigla;
 
                 let vData = "-";
                 if (vDataRaw) {
@@ -120,10 +135,9 @@
                 let lon = parseFloat(String(row[c.lon] || 0).replace(",", "."));
 
                 if (!lat || isNaN(lat) || lat === 0) {
-                    const coords = { "PD": [45.4064, 11.8768], "VE": [45.4408, 12.3155], "VR": [45.4384, 10.9916], "TV": [45.6669, 12.2431], "RO": [45.0711, 11.7907], "BL": [46.1425, 12.2167], "VI": [45.5479, 11.5446] };
-                    const base = coords[vProv] || coords["VI"];
-                    lat = base[0] + (Math.random()-0.5)*0.1;
-                    lon = base[1] + (Math.random()-0.5)*0.1;
+                    const base = coordsDB[vProv] || coordsDB["VI"];
+                    lat = base[0] + (Math.random()-0.5)*0.2;
+                    lon = base[1] + (Math.random()-0.5)*0.2;
                 }
 
                 const getV = (idx) => (idx !== -1 && row[idx]) ? String(row[idx]).trim() : "-";
