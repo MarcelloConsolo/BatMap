@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <title>BatMaps 2025 - Versione 17.65</title>
+    <title>BatMaps 2025 - Versione 17.65 FIX</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -51,6 +51,14 @@
 <script>
     const map = L.map('map').setView([45.4, 11.8], 8);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    // ✅ NORMALIZE (fix accenti)
+    const normalize = (str) =>
+        String(str || "")
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .trim();
 
     function formatTime(val) {
         if (!val || val === "-") return "";
@@ -102,13 +110,18 @@
                     return s.includes("speci") || s.includes("data");
                 })) { hIdx = i; break; }
             }
-            const header = rows[hIdx].map(h => String(h || "").toLowerCase().trim());
+
+            // ✅ HEADER NORMALIZZATO
+            const header = rows[hIdx].map(h => normalize(h));
             const dataRows = rows.slice(hIdx + 1);
 
+            // ✅ getCol robusto
             const getCol = (targets) => {
-                for(let t of targets) {
-                    let idx = header.findIndex(h => h.includes(t));
-                    if(idx !== -1) return idx;
+                targets = targets.map(t => normalize(t));
+                for (let i = 0; i < header.length; i++) {
+                    for (let t of targets) {
+                        if (header[i] && header[i].includes(t)) return i;
+                    }
                 }
                 return -1;
             };
@@ -117,13 +130,13 @@
                 specie: getCol(["specie"]),
                 data: getCol(["data"]),
                 ora: getCol(["ora"]),
-                loc: getCol(["localit"]),
+                loc: getCol(["localita"]),
                 com: getCol(["comune"]),
-                prov: getCol(["provin"]),
+                prov: getCol(["provincia", "prov"]),
                 stato: getCol(["stato"]),
                 note: getCol(["condizioni", "note"]),
-                lat: getCol(["latitud"]),
-                lon: getCol(["longitud"])
+                lat: getCol(["latitudine", "lat"]),
+                lon: getCol(["longitudine", "lon", "lng"])
             };
 
             const markers = L.markerClusterGroup();
@@ -137,7 +150,12 @@
                 if (!vSpecie && !vDataRaw) return;
 
                 let vComRaw = String(row[c.com] || "").trim();
-                let vLocRaw = String(row[c.loc] || "").trim();
+
+                // ✅ FIX LOCALITÀ
+                let vLocRaw = (c.loc !== -1 && row[c.loc] != null)
+                    ? String(row[c.loc]).trim()
+                    : "";
+
                 let vProvOrig = String(row[c.prov] || "").trim().toUpperCase();
                 let vOra = formatTime(row[c.ora]);
 
@@ -149,7 +167,7 @@
                         if (nome.length > 3 && vLocLow.includes(nome)) return { nome: cap(nome), prov: dbComuni[nome].prov, reg: dbComuni[nome].reg, lat: dbComuni[nome].lat, lon: dbComuni[nome].lon };
                     }
                     if (vProvOrig.length === 2) {
-                        const capoluoghi = {"PD":"padova","VI":"vicenza","VE":"venezia","VR":"verona","TV":"treviso","BL":"belluno","RO":"rovigo","MO":"modena","BG":"bergamo","RG":"ragusa","MI":"milano","RM":"roma"};
+                        const capoluoghi = {"PD":"padova","VI":"vicenza","VE":"venezia","VR":"verona","TV":"treviso","BL":"belluno","RO":"rovigo"};
                         const capKey = capoluoghi[vProvOrig];
                         if (capKey && dbComuni[capKey]) return { nome: cap(capKey), prov: vProvOrig, reg: dbComuni[capKey].reg, lat: dbComuni[capKey].lat, lon: dbComuni[capKey].lon };
                     }
@@ -161,7 +179,7 @@
                 let vComDisp = (vComRaw && vComRaw !== "-") ? vComRaw : res.nome;
                 let vReg = res.reg || "-";
 
-                // PULIZIA ADDRESS AVANZATA
+                // pulizia località
                 let vLocDisp = vLocRaw;
                 if (vComDisp && vComDisp !== "-") {
                     let searchName = vComDisp.split('(')[0].trim();
@@ -170,7 +188,12 @@
                     }
                 }
                 vLocDisp = vLocDisp.replace(/^[,\s]+|[,\s]+$/g, '').trim();
-                if (!vLocDisp) vLocDisp = "-";
+
+                // ✅ fallback intelligente
+                if (!vLocDisp || vLocDisp === "-") {
+                    vLocDisp = vComDisp !== "-" ? vComDisp : "Località sconosciuta";
+                }
+
                 vLocDisp = vLocDisp.charAt(0).toUpperCase() + vLocDisp.slice(1);
 
                 let vData = "-";
