@@ -57,6 +57,7 @@ fun BatMapScreen() {
     var isLoading by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
+        ComuniDatabase.initialize(context)
         segnalazioni = withContext(Dispatchers.IO) { leggiExcel(context) }
         isLoading = false
     }
