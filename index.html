@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <title>BatMaps 2025 - Versione 17.20</title>
+    <title>BatMaps 2025 - Versione 17.30</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -52,12 +52,25 @@
 
     async function init() {
         try {
-            // Carica il database dei comuni (ora dalla cartella locale web)
-            const dbResp = await fetch('web/comuni_italiani.json');
-            const dbComuni = await dbResp.json();
+            // Carica il database dei comuni (cerca in entrambi i percorsi possibili)
+            let dbComuni = {};
+            try {
+                const dbResp = await fetch('web/comuni_italiani.json');
+                dbComuni = await dbResp.json();
+            } catch(e) {
+                const dbResp = await fetch('comuni_italiani.json');
+                dbComuni = await dbResp.json();
+            }
 
-            // Carica l'Excel (ora dalla cartella locale web)
-            const response = await fetch('web/Pipistrelli 2025.xlsx?v=' + Date.now());
+            // Carica l'Excel (cerca in entrambi i percorsi possibili)
+            let response;
+            try {
+                response = await fetch('web/Pipistrelli 2025.xlsx?v=' + Date.now());
+                if (!response.ok) throw new Error();
+            } catch(e) {
+                response = await fetch('Pipistrelli 2025.xlsx?v=' + Date.now());
+            }
+
             const data = new Uint8Array(await response.arrayBuffer());
             const workbook = XLSX.read(data, {type: 'array'});
             const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -107,26 +120,23 @@
 
                 let vComRaw = String(row[c.com] || "").trim();
                 let vLocRaw = String(row[c.loc] || "").trim();
-
-                let vCom = vComRaw.toLowerCase();
-                let vLoc = vLocRaw.toLowerCase();
                 let vProvOrig = String(row[c.prov] || "").trim().toUpperCase();
                 let vOra = formatTime(row[c.ora]);
 
                 const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : "-";
 
                 function determinaDati() {
-                    // 1. Comune
-                    if (vCom && dbComuni[vCom]) return { nome: vComRaw, prov: dbComuni[vCom].prov, lat: dbComuni[vCom].lat, lon: dbComuni[vCom].lon };
+                    let vComLow = vComRaw.toLowerCase();
+                    let vLocLow = vLocRaw.toLowerCase();
 
-                    // 2. Località
+                    if (vComLow && dbComuni[vComLow]) return { nome: vComRaw, prov: dbComuni[vComLow].prov, lat: dbComuni[vComLow].lat, lon: dbComuni[vComLow].lon };
+
                     for (let nome in dbComuni) {
-                        if (nome.length > 3 && vLoc.includes(nome)) {
+                        if (nome.length > 3 && vLocLow.includes(nome)) {
                             return { nome: cap(nome), prov: dbComuni[nome].prov, lat: dbComuni[nome].lat, lon: dbComuni[nome].lon };
                         }
                     }
 
-                    // 3. Provincia
                     if (vProvOrig.length === 2) {
                         const capoluoghi = {"PD":"padova","VI":"vicenza","VE":"venezia","VR":"verona","TV":"treviso","BL":"belluno","RO":"rovigo","MO":"modena","BG":"bergamo","RG":"ragusa","MI":"milano","RM":"roma"};
                         const capKey = capoluoghi[vProvOrig];
@@ -137,7 +147,7 @@
                 }
 
                 const res = determinaDati();
-                let vProv = res.prov;
+                let vProv = (vProvOrig && vProvOrig !== "-") ? vProvOrig : res.prov;
                 let vComDisp = (vComRaw && vComRaw !== "-") ? vComRaw : res.nome;
                 let vLocDisp = cap(vLocRaw);
 
