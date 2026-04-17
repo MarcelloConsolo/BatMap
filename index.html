@@ -132,8 +132,15 @@
                 let vDataRaw = row[c.data];
                 if (!vSpecie && !vDataRaw) return;
 
-                let vCom = String(row[c.com] || "").trim().toLowerCase();
-                let vLoc = String(row[c.loc] || "").trim().toLowerCase();
+                let vComRaw = String(row[c.com] || "").trim();
+                let vLocRaw = String(row[c.loc] || "").trim();
+
+                const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : "-";
+                let vComDisp = cap(vComRaw);
+                let vLocDisp = cap(vLocRaw);
+
+                let vCom = vComRaw.toLowerCase();
+                let vLoc = vLocRaw.toLowerCase();
                 let vProvOrig = String(row[c.prov] || "").trim().toUpperCase();
                 let vOra = formatTime(row[c.ora]);
 
@@ -149,8 +156,8 @@
                     // 3. Provincia
                     if (vProvOrig.length === 2) {
                         const capoluoghi = {"PD":"padova","VI":"vicenza","VE":"venezia","VR":"verona","TV":"treviso","BL":"belluno","RO":"rovigo","MO":"modena","BG":"bergamo","RG":"ragusa","MI":"milano","RM":"roma"};
-                        const cap = capoluoghi[vProvOrig];
-                        if (cap && dbComuni[cap]) return { prov: vProvOrig, lat: dbComuni[cap].lat, lon: dbComuni[cap].lon };
+                        const capKey = capoluoghi[vProvOrig];
+                        if (capKey && dbComuni[capKey]) return { prov: vProvOrig, lat: dbComuni[capKey].lat, lon: dbComuni[capKey].lon };
                     }
 
                     return { prov: "VI", lat: 45.5479, lon: 11.5446 };
@@ -194,8 +201,8 @@
                         <span class="specie-title">${vSpecie}</span>
                         <div class="date-subtitle">Segnalazione del ${vData} ${vOra ? 'alle ore '+vOra : ''}</div>
                         <table class="popup-table">
-                            <tr><td class="label">Località:</td><td class="valore">${vLoc}</td></tr>
-                            <tr><td class="label">Comune:</td><td class="valore">${row[c.com] || "-"}</td></tr>
+                            <tr><td class="label">Località:</td><td class="valore">${vLocDisp}</td></tr>
+                            <tr><td class="label">Comune:</td><td class="valore">${vComDisp}</td></tr>
                             <tr><td class="label">Provincia:</td><td class="valore">${vProv}</td></tr>
                             <tr><td class="label">Stato:</td><td class="valore">${getV(c.stato)}</td></tr>
                             <tr><td class="label">Condizioni:</td><td class="valore">${getV(c.note)}</td></tr>

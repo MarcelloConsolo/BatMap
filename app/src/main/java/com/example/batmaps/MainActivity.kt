@@ -205,7 +205,9 @@ fun leggiExcel(context: Context): List<Pair<Segnalazione, GeoPoint>> {
             val dataFull = if (oRaw.isNotBlank() && oRaw != "-") "Segnalazione del $dRaw alle ore $oRaw" else "Segnalazione del $dRaw"
             
             val localita = formatter.formatCellValue(row.getCell(colMap["loc"] ?: -1)).trim()
+                .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
             val comuneRaw = formatter.formatCellValue(row.getCell(colMap["comune"] ?: -1)).trim()
+                .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
             val provinciaRaw = formatter.formatCellValue(row.getCell(colMap["prov"] ?: -1)).trim()
 
             // Ottieni dati dal database basato sulla priorità: Provincia -> Comune -> Località
