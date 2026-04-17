@@ -2,7 +2,7 @@ import json
 import os
 
 def genera():
-    # Dizionario capoluoghi esteso per coprire tutta Italia
+    # Dizionario capoluoghi esteso per coprire tutta Italia (fallback se mancano i dati nel JSON)
     coords_base = {
         'AG': (37.3106, 13.5765), 'AL': (44.9129, 8.6154), 'AN': (43.6158, 13.5189), 'AO': (45.7349, 7.3233),
         'AQ': (42.3489, 13.3973), 'AR': (43.4633, 11.8781), 'AP': (42.8535, 13.5761), 'AT': (44.8991, 8.2041),
@@ -49,19 +49,16 @@ def genera():
         nome = str(c['comune']).lower().strip()
         prov = str(c['provincia']).upper().strip()
 
-        # Default coords based on province capoluogo
-        lat, lon = coords_base.get(prov, (45.5479, 11.5446))
-
-        # Match per capoluogo specifico per precisione massima
-        if nome in ['vicenza', 'padova', 'verona', 'venezia', 'treviso', 'belluno', 'rovigo', 'modena', 'milano', 'roma', 'bergamo', 'ragusa']:
-            lat, lon = coords_base.get(prov, (lat, lon))
+        # Usa coordinate del comune se disponibili, altrimenti fallback alla provincia
+        lat = c.get('latitudine', coords_base.get(prov, (45.5479, 11.5446))[0])
+        lon = c.get('longitudine', coords_base.get(prov, (45.5479, 11.5446))[1])
 
         data[nome] = {
             'prov': prov,
             'res': c.get('num_residenti', 0),
             'sup': c.get('superficie', 0),
-            'lat': lat,
-            'lon': lon
+            'lat': float(lat),
+            'lon': float(lon)
         }
 
     for out in [output_path_app, output_path_web]:
@@ -69,7 +66,7 @@ def genera():
         with open(out, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-    print(f"✅ Generato database in App e Web con {len(data)} comuni.")
+    print(f"✅ Generato database con coordinate PRECISE per {len(data)} comuni.")
 
 if __name__ == "__main__":
     genera()
