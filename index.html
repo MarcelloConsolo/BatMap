@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <title>BatMaps 2025 - Versione 17.5</title>
+    <title>BatMaps 2025 - Versione 17.6</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -78,9 +78,9 @@
                 com: getCol(["comune"]),
                 prov: getCol(["provincia"]),
                 stato: getCol(["stato"]),
-                note: getCol(["condizioni al recupero", "note", "condizioni"]),
-                lat: getCol(["latitudine", "lat"]),
-                lon: getCol(["longitudine", "lon"])
+                note: getCol(["condizioni al recupero", "note"]),
+                lat: getCol(["latitudine"]),
+                lon: getCol(["longitudine"])
             };
 
             const markers = L.markerClusterGroup();
@@ -93,7 +93,7 @@
                 let vLoc = String(row[c.loc] || "").trim();
                 let vProv = String(row[c.prov] || "").trim();
                 let vDataRaw = row[c.data];
-                let vOra = row[c.ora] || "";
+                let vOraRaw = row[c.ora];
 
                 let rigaTesto = row.join(" ");
                 if (!vProv || vProv === "-" || vProv === "nan" || vProv.length > 2) vProv = getProvincia(rigaTesto);
@@ -102,6 +102,16 @@
                 if (vDataRaw) {
                     if (typeof vDataRaw === 'number') vData = new Date((vDataRaw - 25569) * 86400 * 1000).toLocaleDateString('it-IT');
                     else vData = String(vDataRaw).split("T")[0];
+                }
+
+                let vOra = "";
+                if (vOraRaw) {
+                    if (typeof vOraRaw === 'number' && vOraRaw < 1) {
+                        let totalSec = Math.round(vOraRaw * 24 * 3600);
+                        let h = Math.floor(totalSec / 3600);
+                        let m = Math.floor((totalSec % 3600) / 60);
+                        vOra = (h<10?'0':'')+h + ":" + (m<10?'0':'')+m;
+                    } else vOra = String(vOraRaw);
                 }
 
                 let lat = parseFloat(String(row[c.lat] || 0).replace(",", "."));
