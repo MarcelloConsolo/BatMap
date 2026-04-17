@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <title>BatMaps 2025 - Versione 17.1</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <style>
+        body { margin: 0; padding: 0; font-family: sans-serif; background: #f4f7f6; }
+        #map { height: 100vh; width: 100%; }
+        #overlay {
+            position: fixed; top: 15px; right: 15px;
+            background: white; padding: 15px; border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2); z-index: 1000;
+            border-left: 5px solid #2980b9;
+        }
+        .popup-table { font-size: 13px; border-collapse: collapse; width: 100%; margin-top: 5px; }
+        .popup-table td { padding: 5px 0; border-bottom: 1px solid #eee; vertical-align: top; }
+        .label { font-weight: bold; color: #7f8c8d; width: 85px; }
+        .valore { color: #2c3e50; font-weight: 500; }
+        .specie-title { color: #2980b9; font-size: 1.2em; font-weight: bold; display: block; }
+        .date-time-subtitle { font-size: 0.85em; color: #95a5a6; font-style: italic; margin-top: 4px; margin-bottom: 8px; }
+    </style>
+</head>
+<body>
+<div id="overlay">
+    <b style="font-size:1.2em; color: #2c3e50;">BatMaps 2025</b><br>
+    <div id="status" style="color: #7f8c8d; font-size: 0.9em; margin: 5px 0;">Sincronizzazione Excel...</div>
+    <div id="counter" style="font-size: 1.2em; font-weight: bold; color: #27ae60;"></div>
+</div>
+<div id="map"></div>
+<script>
+    const map = L.map('map').setView([45.5479, 11.5446], 9);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    const comuniDB = {
+        "vicenza": "VI", "arzignano": "VI", "bassano": "VI", "schio": "VI", "valdagno": "VI",
+        "thiene": "VI", "montecchio": "VI", "lonigo": "VI", "malo": "VI", "cassola": "VI",
+        "rosà": "VI", "marostica": "VI", "chiampo": "VI", "torrebelvicino": "VI", "sandrigo": "VI",
+        "asiago": "VI", "roana": "VI", "gallio": "VI", "eraclea": "VE", "jesolo": "VE", "venezia": "VE"
+    };
+
+    function getProvincia(rigaTesto, comune, localita) {
+        let t = String(rigaTesto).toLowerCase();
+        let c = String(comune || "").toLowerCase();
+        let l = String(localita || "").toLowerCase();
+
+        if (t.includes("asiago") || t.includes("roana") || t.includes("gallio")) return "VI";
+        if (t.includes("eraclea") || t.includes("jesolo") || t.includes("venezia")) return "VE";
+        if (t.includes("bassano")) return "VI";
+
+        for (let nome in comuniDB) {
+            if (c.includes(nome) || l.includes(nome)) return comuniDB[nome];
+        }
+        return "-";
+    }
+
+    async function init() {
+        try {
+            const response = await fetch('Pipistrelli 2025.xlsx?v=' + Date.now());
+            const data = new Uint8Array(await response.arrayBuffer());
+            const workbook = XLSX.read(data, {type: 'array'});
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(sheet, {header: 1});
+
+            let hIdx = 0;
+            for(let i=0; i<Math.min(rows.length, 50); i++) {
+                if(rows[i] && rows[i].some(c => String(c).toLowerCase().includes("speci"))) {
+                    hIdx = i; break;
+                }
+            }
+            const header = rows[hIdx].map(h => String(h || "").toLowerCase().trim());
+            const dataRows = rows.slice(hIdx + 1);
+
+            const getCol = (targets) => {
+                for(let t of targets) {
+                    let idx = header.indexOf(t);
+                    if(idx !== -1) return idx;
+                }
+                for(let t of targets) {
+                    let idx = header.findIndex(h => h.includes(t));
+                    if(idx !== -1) return idx;
+                }
+                return -1;
+            };
+
+            const c = {
+                specie: getCol(["specie animale", "specie"]),
+                data: getCol(["data segnalazione", "data"]),
+                ora: getCol(["ora"]),
+                loc: getCol(["località", "localit"]),
+                com: getCol(["comune"]),
+                note: getCol(["condizioni al recupero", "note"]),
+                prov: getCol(["provincia"]),
+                stato: getCol(["stato"]),
+                lat: getCol(["latitude", "lat"]),
+                lon: getCol(["longitude", "lon", "lng"])
+            };
+
+            const markers = L.markerClusterGroup();
+            let count = 0;
+
+            dataRows.forEach(row => {
+                if (!row) return;
+                let vSpecie = (c.specie !== -1 && row[c.specie]) ? String(row[c.specie]).trim() : "";
+                let vDataRaw = (c.data !== -1 && row[c.data]) ? row[c.data] : "";
+                if (!vSpecie && !vDataRaw) return;
+
+                let rigaTesto = row.join(" ");
+                let vCom = (c.com !== -1 && row[c.com]) ? String(row[c.com]).trim() : "";
+                let vLoc = (c.loc !== -1 && row[c.loc]) ? String(row[c.loc]).trim() : "";
+                let vProv = (c.prov !== -1 && row[c.prov]) ? String(row[c.prov]).trim() : "";
+
+                // CORREZIONE BASSANO/FABRIANO E PROVINCE MANCANTI
+                if (rigaTesto.toLowerCase().includes("bassano")) {
+                    vCom = "Bassano del Grappa";
+                    vProv = "VI";
+                }
+                if (!vProv || vProv.toLowerCase() === "nan" || vProv === "-" || vProv.length > 2) {
+                    vProv = getProvincia(rigaTesto, vCom, vLoc);
+                }
+
+                let vData = "-";
+                if (vDataRaw) {
+                    if (typeof vDataRaw === 'number') vData = new Date((vDataRaw - 25569) * 86400 * 1000).toLocaleDateString('it-IT').replace(/\//g, ".");
+                    else vData = String(vDataRaw).split("T")[0].replace(/\//g, ".");
+                }
+
+                const getVal = (idx) => (idx !== -1 && row[idx] != null && String(row[idx]).trim() !== "" && String(row[idx]) !== "nan") ? String(row[idx]).trim() : "-";
+
+                const popup = `
+                    <div style="min-width: 230px">
+                        <span class="specie-title">${vSpecie || "Pipistrello"}</span>
+                        <div class="date-time-subtitle">Segnalazione del ${vData}</div>
+                        <table class="popup-table">
+                            <tr><td class="label">Località:</td><td class="valore">${vLoc || "-"}</td></tr>
+                            <tr><td class="label">Comune:</td><td class="valore">${vCom || "-"}</td></tr>
+                            <tr><td class="label">Provincia:</td><td class="valore">${vProv}</td></tr>
+                            <tr><td class="label">Stato:</td><td class="valore">${getVal(c.stato)}</td></tr>
+                            <tr><td class="label">Note:</td><td class="valore">${getVal(c.note)}</td></tr>
+                        </table>
+                    </div>`;
+
+                let lat = parseFloat(String(row[c.lat] || 0).replace(",", "."));
+                let lon = parseFloat(String(row[c.lon] || 0).replace(",", "."));
+                if (!lat || isNaN(lat)) { lat = 45.5479 + (Math.random()-0.5)*0.1; lon = 11.5446 + (Math.random()-0.5)*0.1; }
+                markers.addLayer(L.marker([lat, lon]).bindPopup(popup));
+                count++;
+            });
+            map.addLayer(markers);
+            document.getElementById('status').innerText = "✅ Sincronizzato";
+            document.getElementById('counter').innerText = "Totale: " + count;
+        } catch (e) { console.error(e); }
+    }
+    init();
+</script>
+</body>
+</html>
