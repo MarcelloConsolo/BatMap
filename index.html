@@ -80,6 +80,10 @@
 
     async function init() {
         try {
+            // Carica il database dei comuni
+            const dbResp = await fetch('app/src/main/assets/comuni_italiani.json');
+            const dbComuni = await dbResp.json();
+
             const response = await fetch('Pipistrelli 2025.xlsx?v=' + Date.now());
             const data = new Uint8Array(await response.arrayBuffer());
             const workbook = XLSX.read(data, {type: 'array'});
@@ -119,6 +123,7 @@
 
             const markers = L.markerClusterGroup();
             let count = 0;
+            const bounds = [];
 
             dataRows.forEach(row => {
                 if (!row || row.length < 2) return;
@@ -127,43 +132,31 @@
                 let vDataRaw = row[c.data];
                 if (!vSpecie && !vDataRaw) return;
 
-                let vCom = String(row[c.com] || "").trim();
-                let vLoc = String(row[c.loc] || "").trim();
-                let vProvOrig = String(row[c.prov] || "").trim();
+                let vCom = String(row[c.com] || "").trim().toLowerCase();
+                let vLoc = String(row[c.loc] || "").trim().toLowerCase();
+                let vProvOrig = String(row[c.prov] || "").trim().toUpperCase();
                 let vOra = formatTime(row[c.ora]);
 
-                // Database potenziato per il Sito
-                const dbPunti = {
-                    "vicenza": [45.5479, 11.5446, "VI"], "padova": [45.4064, 11.8768, "PD"],
-                    "verona": [45.4384, 10.9916, "VR"], "venezia": [45.4408, 12.3155, "VE"],
-                    "treviso": [45.6669, 12.2431, "TV"], "belluno": [46.1425, 12.2167, "BL"],
-                    "rovigo": [45.0711, 11.7907, "RO"], "modena": [44.6471, 10.9252, "MO"],
-                    "arzignano": [45.5210, 11.3323, "VI"], "bassano del grappa": [45.7665, 11.7342, "VI"],
-                    "schio": [45.7124, 11.3541, "VI"], "thiene": [45.7073, 11.4776, "VI"],
-                    "san martino di lupari": [45.6558, 11.8601, "PD"], "carrè": [45.7485, 11.4589, "VI"],
-                    "santorso": [45.7347, 11.3908, "VI"], "sossano": [45.3582, 11.5113, "VI"]
-                };
+                function determinaDati() {
+                    // 1. Comune
+                    if (dbComuni[vCom]) return { prov: dbComuni[vCom].prov, lat: dbComuni[vCom].lat, lon: dbComuni[vCom].lon };
 
-                function determinaDati(loc, com, prov) {
-                    let p = prov.toUpperCase().trim();
-                    let c = com.toLowerCase().trim();
-                    let l = loc.toLowerCase().trim();
-
-                    // 1. Provincia
-                    if (p.length === 2) {
-                        if (dbPunti[c]) return { prov: p, lat: dbPunti[c][0], lon: dbPunti[c][1] };
-                        const cap = Object.values(dbPunti).find(v => v[2] === p);
-                        if (cap) return { prov: p, lat: cap[0], lon: cap[1] };
+                    // 2. Località
+                    for (let nome in dbComuni) {
+                        if (nome.length > 3 && vLoc.includes(nome)) return { prov: dbComuni[nome].prov, lat: dbComuni[nome].lat, lon: dbComuni[nome].lon };
                     }
-                    // 2. Comune
-                    if (dbPunti[c]) return { prov: dbPunti[c][2], lat: dbPunti[c][0], lon: dbPunti[c][1] };
-                    // 3. Località
-                    for (let k in dbPunti) { if (l.includes(k)) return { prov: dbPunti[k][2], lat: dbPunti[k][0], lon: dbPunti[k][1] }; }
+
+                    // 3. Provincia
+                    if (vProvOrig.length === 2) {
+                        const capoluoghi = {"PD":"padova","VI":"vicenza","VE":"venezia","VR":"verona","TV":"treviso","BL":"belluno","RO":"rovigo","MO":"modena","BG":"bergamo","RG":"ragusa","MI":"milano","RM":"roma"};
+                        const cap = capoluoghi[vProvOrig];
+                        if (cap && dbComuni[cap]) return { prov: vProvOrig, lat: dbComuni[cap].lat, lon: dbComuni[cap].lon };
+                    }
 
                     return { prov: "VI", lat: 45.5479, lon: 11.5446 };
                 }
 
-                const res = determinaDati(vLoc, vCom, vProvOrig);
+                const res = determinaDati();
                 let vProv = res.prov;
 
                 let vData = "-";
@@ -202,17 +195,20 @@
                         <div class="date-subtitle">Segnalazione del ${vData} ${vOra ? 'alle ore '+vOra : ''}</div>
                         <table class="popup-table">
                             <tr><td class="label">Località:</td><td class="valore">${vLoc}</td></tr>
-                            <tr><td class="label">Comune:</td><td class="valore">${vCom}</td></tr>
+                            <tr><td class="label">Comune:</td><td class="valore">${row[c.com] || "-"}</td></tr>
                             <tr><td class="label">Provincia:</td><td class="valore">${vProv}</td></tr>
                             <tr><td class="label">Stato:</td><td class="valore">${getV(c.stato)}</td></tr>
                             <tr><td class="label">Condizioni:</td><td class="valore">${getV(c.note)}</td></tr>
                         </table>
                     </div>`;
 
-                markers.addLayer(L.marker([lat, lon], {icon: customIcon}).bindPopup(popup));
+                const marker = L.marker([lat, lon], {icon: customIcon}).bindPopup(popup);
+                markers.addLayer(marker);
+                bounds.push([lat, lon]);
                 count++;
             });
             map.addLayer(markers);
+            if (bounds.length > 0) map.fitBounds(bounds);
             document.getElementById('status').innerText = "✅ Sincronizzato";
             document.getElementById('counter').innerText = "Totale: " + count;
         } catch (e) { console.error(e); document.getElementById('status').innerText = "❌ Errore caricamento"; }
