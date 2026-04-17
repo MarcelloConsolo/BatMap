@@ -1,171 +1,220 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <title>BatMaps 2025 - Stable</title>
+    <title>BatMaps 2025 - Versione 17.65</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 
     <style>
-        body { margin:0; font-family:sans-serif; }
-        #map { height:100vh; }
+        body { margin:0; padding:0; font-family:sans-serif; background:#f4f7f6; }
+        #map { height:100vh; width:100%; }
         #overlay {
             position:fixed; top:15px; right:15px;
             background:white; padding:15px;
             border-radius:10px;
             box-shadow:0 4px 15px rgba(0,0,0,0.2);
             z-index:1000;
+            border-left:5px solid #2980b9;
+            width:230px;
         }
+        .popup-table { font-size:13px; border-collapse:collapse; width:100%; margin-top:5px; }
+        .popup-table td { padding:5px 0; border-bottom:1px solid #eee; vertical-align:top; }
+        .label { font-weight:bold; color:#7f8c8d; width:90px; }
+        .valore { color:#2c3e50; font-weight:500; }
+        .specie-title { color:#2980b9; font-size:1.2em; font-weight:bold; display:block; }
+        .date-subtitle { font-size:0.85em; color:#95a5a6; font-style:italic; margin-bottom:8px; }
     </style>
 </head>
 
 <body>
 
 <div id="overlay">
-    <b>BatMaps 2025</b><br>
-    <div id="status">Caricamento...</div>
-    <div id="counter"></div>
+    <b style="font-size:1.2em;color:#2c3e50;">BatMaps 2025</b><br>
+    <div id="status" style="color:#7f8c8d;font-size:0.9em;margin:5px 0;">Sincronizzazione Excel...</div>
+    <div id="counter" style="font-size:1.2em;font-weight:bold;color:#27ae60;"></div>
 </div>
 
 <div id="map"></div>
 
 <script>
 const map = L.map('map').setView([45.4, 11.8], 8);
+
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-/* NORMALIZE */
-const norm = s => String(s||"")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g,"")
-    .replace(/[^a-z0-9 ]/g," ")
-    .replace(/\s+/g," ")
-    .trim();
+/* =========================
+   NORMALIZZAZIONE FORTE
+   (FIX BASSANO + simili)
+========================= */
+const normalizeKey = (str) =>
+    String(str || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
 
-/* LEVENSHTEIN */
-function lev(a,b){
-    const m=[];
-    for(let i=0;i<=b.length;i++){m[i]=[i]}
-    for(let j=0;j<=a.length;j++){m[0][j]=j}
-    for(let i=1;i<=b.length;i++){
-        for(let j=1;j<=a.length;j++){
-            m[i][j]=b[i-1]==a[j-1]?m[i-1][j-1]:
-                Math.min(m[i-1][j-1]+1,m[i][j-1]+1,m[i-1][j]+1)
-        }
+function formatTime(val) {
+    if (!val || val === "-") return "";
+    let s = String(val).trim();
+    let num = parseFloat(s.replace(",", "."));
+
+    if (!isNaN(num) && num > 0 && num < 1) {
+        let sec = Math.round(num * 24 * 3600);
+        let h = Math.floor(sec / 3600);
+        let m = Math.floor((sec % 3600) / 60);
+        return (h<10?"0":"")+h+":"+(m<10?"0":"")+m;
     }
-    return m[b.length][a.length]
+
+    if (s.includes(":")) {
+        let p = s.split(":");
+        return p[0].padStart(2,'0') + ":" + p[1].padStart(2,'0');
+    }
+
+    return s;
 }
 
-function fuzzy(key,index){
-    if(index[key]) return index[key]
-    let best=null,score=3
-    for(let k in index){
-        let d=lev(key,k)
-        if(d<score){score=d;best=index[k]}
-    }
-    return best
-}
-
-async function init(){
-    const db=await (await fetch('web/comuni_italiani.json')).json()
-
-    const idx={}
-    for(let k in db){ idx[norm(k)]=db[k] }
-
-    const file=await (await fetch('web/Pipistrelli 2025.xlsx?v='+Date.now())).arrayBuffer()
-    const wb=XLSX.read(new Uint8Array(file),{type:'array'})
-    const sheet=wb.Sheets[wb.SheetNames[0]]
-    const rows=XLSX.utils.sheet_to_json(sheet,{header:1})
-
-    /* HEADER INTELLIGENTE (FIX CRITICO) */
-    let hIdx=0
-    for(let i=0;i<rows.length && i<20;i++){
-        if(rows[i]?.some(c=>{
-            let s=String(c||"").toLowerCase()
-            return s.includes("specie") || s.includes("data")
-        })){
-            hIdx=i
-            break
+async function init() {
+    try {
+        let dbComuni = {};
+        try {
+            dbComuni = await (await fetch('web/comuni_italiani.json')).json();
+        } catch {
+            dbComuni = await (await fetch('comuni_italiani.json')).json();
         }
-    }
 
-    const header=rows[hIdx].map(h=>String(h||"").toLowerCase())
-    const data=rows.slice(hIdx+1)
+        let response;
+        try {
+            response = await fetch('web/Pipistrelli 2025.xlsx?v=' + Date.now());
+        } catch {
+            response = await fetch('Pipistrelli 2025.xlsx?v=' + Date.now());
+        }
 
-    const col=t=>{
-        for(let i=0;i<header.length;i++)
-            for(let x of t)
-                if(header[i]?.includes(x)) return i
-        return -1
-    }
+        const data = new Uint8Array(await response.arrayBuffer());
+        const workbook = XLSX.read(data, {type:'array'});
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, {header:1});
 
-    const c={
-        specie:col(["specie"]),
-        com:col(["comune"]),
-        loc:col(["localita"]),
-        prov:col(["provincia"]),
-        stato:col(["stato"]),
-        note:col(["condizioni"]),
-        lat:col(["lat"]),
-        lon:col(["lon"])
-    }
-
-    const cluster=L.markerClusterGroup()
-    let count=0
-
-    data.forEach(r=>{
-        if(!r || r.length<2) return
-
-        const comRaw=String(r[c.com]||"").trim()
-        const locRaw=String(r[c.loc]||"").trim()
-
-        const key=norm(comRaw)
-        const match=idx[key] || fuzzy(key,idx)
-
-        let lat=parseFloat(String(r[c.lat]||"").replace(",","."))
-        let lon=parseFloat(String(r[c.lon]||"").replace(",","."));
-
-        if(isNaN(lat)||isNaN(lon)){
-            if(match){
-                lat=match.lat
-                lon=match.lon
-            } else {
-                lat=45.5
-                lon=11.5
+        let hIdx = 0;
+        for (let i=0;i<rows.length&&i<20;i++) {
+            if (rows[i]?.some(c =>
+                String(c||"").toLowerCase().includes("speci") ||
+                String(c||"").toLowerCase().includes("data")
+            )) {
+                hIdx = i;
+                break;
             }
         }
 
-        /* FIX LOCALITÀ */
-        let locDisplay = "-"
-        if(locRaw && locRaw !== "") locDisplay = locRaw
-        else if(comRaw) locDisplay = comRaw
+        const header = rows[hIdx].map(h => String(h||"").toLowerCase().trim());
+        const dataRows = rows.slice(hIdx+1);
 
-        const marker=L.marker([lat,lon]).bindPopup(`
-            <b>${r[c.specie]||"Pipistrello"}</b><br>
-            Località: ${locDisplay}<br>
-            Comune: ${comRaw||"-"}<br>
-            Provincia: ${r[c.prov]||"-"}<br>
-            Stato: ${r[c.stato]||"-"}<br>
-            Condizioni: ${r[c.note]||"-"}
-        `)
+        const getCol = (targets) => {
+            targets = targets.map(t => t.toLowerCase());
+            for (let i=0;i<header.length;i++) {
+                for (let t of targets) {
+                    if (header[i]?.includes(t)) return i;
+                }
+            }
+            return -1;
+        };
 
-        cluster.addLayer(marker)
-        count++
-    })
+        const c = {
+            specie: getCol(["specie animale"]),
+            data: getCol(["data segnalazione"]),
+            ora: getCol(["ora"]),
+            loc: getCol(["localita"]),
+            com: getCol(["comune"]),
+            prov: getCol(["provincia"]),
+            stato: getCol(["stato"]),
+            note: getCol(["condizioni al recupero"]),
+            lat: getCol(["latitudine"]),
+            lon: getCol(["longitudine"])
+        };
 
-    map.addLayer(cluster)
-    if(count>0) map.fitBounds(cluster.getBounds())
+        const markers = L.markerClusterGroup();
+        let allMarkers = [];
 
-    document.getElementById("counter").innerText="Totale: "+count
-    document.getElementById("status").innerText="OK"
+        dataRows.forEach(row => {
+            if (!row || row.length < 2) return;
+
+            const vSpecie = String(row[c.specie] || "Pipistrello").trim();
+            const vComRaw = String(row[c.com] || "").trim();
+            const vLocRaw = String(row[c.loc] || "").trim();
+            const vProv = String(row[c.prov] || "").trim().toUpperCase();
+            const vOra = formatTime(row[c.ora]);
+
+            let vData = "-";
+            if (row[c.data]) {
+                if (typeof row[c.data] === "number") {
+                    vData = new Date((row[c.data]-25569)*86400*1000).toLocaleDateString("it-IT");
+                } else {
+                    vData = String(row[c.data]).split("T")[0];
+                }
+            }
+
+            let lat = parseFloat(String(row[c.lat]||"").replace(",","."));
+            let lon = parseFloat(String(row[c.lon]||"").replace(",","."));
+
+            /* =========================
+               FIX BASSANO + COMUNI
+            ========================= */
+            if (isNaN(lat) || isNaN(lon)) {
+                const key = normalizeKey(vComRaw);
+                const match = dbComuni[key];
+
+                if (match) {
+                    lat = match.lat;
+                    lon = match.lon;
+                } else {
+                    return; // non inventare coordinate
+                }
+            }
+
+            const safeLoc =
+                (vLocRaw && vLocRaw.trim() !== "")
+                    ? vLocRaw
+                    : vComRaw;
+
+            const marker = L.marker([lat, lon]).bindPopup(`
+                <div style="min-width:210px">
+                    <span class="specie-title">${vSpecie}</span>
+                    <div class="date-subtitle">Segnalazione del ${vData} ${vOra ? "ore "+vOra : ""}</div>
+                    <table class="popup-table">
+                        <tr><td class="label">Località:</td><td class="valore">${safeLoc}</td></tr>
+                        <tr><td class="label">Comune:</td><td class="valore">${vComRaw||""}</td></tr>
+                        <tr><td class="label">Provincia:</td><td class="valore">${vProv||""}</td></tr>
+                        <tr><td class="label">Stato:</td><td class="valore">${String(row[c.stato]||"")}</td></tr>
+                        <tr><td class="label">Condizioni:</td><td class="valore">${String(row[c.note]||"")}</td></tr>
+                    </table>
+                </div>
+            `);
+
+            allMarkers.push({marker, lat, lon});
+            markers.addLayer(marker);
+        });
+
+        map.addLayer(markers);
+
+        if (allMarkers.length) {
+            map.fitBounds(allMarkers.map(m => [m.lat, m.lon]));
+        }
+
+        document.getElementById("status").innerText = "✅ Sincronizzato";
+        document.getElementById("counter").innerText = "Totale: " + allMarkers.length;
+
+    } catch (e) {
+        console.error(e);
+        document.getElementById("status").innerText = "❌ Errore";
+    }
 }
 
-init()
+init();
 </script>
 
 </body>
