@@ -48,11 +48,11 @@
 
     function getProvSigla(riga) {
         let t = riga.toLowerCase();
-        if (t.includes("padova")) return "PD";
+        if (t.includes("padova") || t.includes("san martino di lupari")) return "PD";
         if (t.includes("venezia") || t.includes("eraclea") || t.includes("mestre")) return "VE";
         if (t.includes("verona")) return "VR";
         if (t.includes("treviso") || t.includes("cappella maggiore")) return "TV";
-        if (t.includes("vicenza") || t.includes("bassano") || t.includes("asiago") || t.includes("castelgomberto") || t.includes("san vito") || t.includes("arcugnano") || t.includes("marano vicentino") || t.includes("breganze") || t.includes("costabissara")) return "VI";
+        if (t.includes("vicenza") || t.includes("bassano") || t.includes("asiago") || t.includes("castelgomberto") || t.includes("san vito") || t.includes("arcugnano") || t.includes("marano vicentino") || t.includes("breganze") || t.includes("costabissara") || t.includes("carrè") || t.includes("santorso") || t.includes("sossano")) return "VI";
         if (t.includes("modena")) return "MO";
         if (t.includes("bergamo")) return "BG";
         if (t.includes("ragusa")) return "RG";

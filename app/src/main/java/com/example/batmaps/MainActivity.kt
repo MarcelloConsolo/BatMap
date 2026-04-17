@@ -187,7 +187,7 @@ fun leggiExcel(context: Context): List<Pair<Segnalazione, GeoPoint>> {
 
             val rigaTesto = (0 until row.lastCellNum).joinToString(" ") { formatter.formatCellValue(row.getCell(it)).lowercase() }
             val provSigla = when {
-                rigaTesto.contains("padova") -> "PD"
+                rigaInteraContains(rigaTesto, "padova", "san martino di lupari") -> "PD"
                 rigaInteraContains(rigaTesto, "venezia", "mestre", "eraclea") -> "VE"
                 rigaTesto.contains("verona") -> "VR"
                 rigaInteraContains(rigaTesto, "treviso", "cappella maggiore") -> "TV"
