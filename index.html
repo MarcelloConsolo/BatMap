@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <title>BatMaps 2025 - Versione 17.65</title>
+    <title>BatMaps 2025 - Fuzzy Geolocation</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -24,7 +25,7 @@
             width:230px;
         }
         .popup-table { font-size:13px; border-collapse:collapse; width:100%; margin-top:5px; }
-        .popup-table td { padding:5px 0; border-bottom:1px solid #eee; vertical-align:top; }
+        .popup-table td { padding:5px 0; border-bottom:1px solid #eee; }
         .label { font-weight:bold; color:#7f8c8d; width:90px; }
         .valore { color:#2c3e50; font-weight:500; }
         .specie-title { color:#2980b9; font-size:1.2em; font-weight:bold; display:block; }
@@ -35,29 +36,73 @@
 <body>
 
 <div id="overlay">
-    <b style="font-size:1.2em;color:#2c3e50;">BatMaps 2025</b><br>
-    <div id="status" style="color:#7f8c8d;font-size:0.9em;margin:5px 0;">Sincronizzazione Excel...</div>
-    <div id="counter" style="font-size:1.2em;font-weight:bold;color:#27ae60;"></div>
+    <b>BatMaps 2025</b><br>
+    <div id="status">Caricamento...</div>
+    <div id="counter"></div>
 </div>
 
 <div id="map"></div>
 
 <script>
 const map = L.map('map').setView([45.4, 11.8], 8);
-
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 /* =========================
    NORMALIZZAZIONE FORTE
-   (FIX BASSANO + simili)
 ========================= */
 const normalizeKey = (str) =>
     String(str || "")
         .toLowerCase()
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9\s]/g, " ")
         .replace(/\s+/g, " ")
         .trim();
+
+/* =========================
+   LEVENSHTEIN DIST (fuzzy)
+========================= */
+function levenshtein(a, b) {
+    const matrix = Array.from({ length: b.length + 1 }, () => []);
+
+    for (let i = 0; i <= b.length; i++) matrix[i][0] = i;
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            if (b[i - 1] === a[j - 1]) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(
+                    matrix[i - 1][j - 1] + 1,
+                    matrix[i][j - 1] + 1,
+                    matrix[i - 1][j] + 1
+                );
+            }
+        }
+    }
+    return matrix[b.length][a.length];
+}
+
+/* =========================
+   FUZZY MATCH ENGINE
+========================= */
+function findComune(key, index) {
+    if (index[key]) return index[key];
+
+    let best = null;
+    let bestScore = 999;
+
+    for (let k in index) {
+        const dist = levenshtein(key, k);
+        if (dist < bestScore && dist <= 3) {
+            bestScore = dist;
+            best = index[k];
+        }
+    }
+
+    return best;
+}
 
 function formatTime(val) {
     if (!val || val === "-") return "";
@@ -80,138 +125,89 @@ function formatTime(val) {
 }
 
 async function init() {
-    try {
-        let dbComuni = {};
-        try {
-            dbComuni = await (await fetch('web/comuni_italiani.json')).json();
-        } catch {
-            dbComuni = await (await fetch('comuni_italiani.json')).json();
-        }
+    let dbComuni = await (await fetch('web/comuni_italiani.json')).json();
 
-        let response;
-        try {
-            response = await fetch('web/Pipistrelli 2025.xlsx?v=' + Date.now());
-        } catch {
-            response = await fetch('Pipistrelli 2025.xlsx?v=' + Date.now());
-        }
-
-        const data = new Uint8Array(await response.arrayBuffer());
-        const workbook = XLSX.read(data, {type:'array'});
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(sheet, {header:1});
-
-        let hIdx = 0;
-        for (let i=0;i<rows.length&&i<20;i++) {
-            if (rows[i]?.some(c =>
-                String(c||"").toLowerCase().includes("speci") ||
-                String(c||"").toLowerCase().includes("data")
-            )) {
-                hIdx = i;
-                break;
-            }
-        }
-
-        const header = rows[hIdx].map(h => String(h||"").toLowerCase().trim());
-        const dataRows = rows.slice(hIdx+1);
-
-        const getCol = (targets) => {
-            targets = targets.map(t => t.toLowerCase());
-            for (let i=0;i<header.length;i++) {
-                for (let t of targets) {
-                    if (header[i]?.includes(t)) return i;
-                }
-            }
-            return -1;
-        };
-
-        const c = {
-            specie: getCol(["specie animale"]),
-            data: getCol(["data segnalazione"]),
-            ora: getCol(["ora"]),
-            loc: getCol(["localita"]),
-            com: getCol(["comune"]),
-            prov: getCol(["provincia"]),
-            stato: getCol(["stato"]),
-            note: getCol(["condizioni al recupero"]),
-            lat: getCol(["latitudine"]),
-            lon: getCol(["longitudine"])
-        };
-
-        const markers = L.markerClusterGroup();
-        let allMarkers = [];
-
-        dataRows.forEach(row => {
-            if (!row || row.length < 2) return;
-
-            const vSpecie = String(row[c.specie] || "Pipistrello").trim();
-            const vComRaw = String(row[c.com] || "").trim();
-            const vLocRaw = String(row[c.loc] || "").trim();
-            const vProv = String(row[c.prov] || "").trim().toUpperCase();
-            const vOra = formatTime(row[c.ora]);
-
-            let vData = "-";
-            if (row[c.data]) {
-                if (typeof row[c.data] === "number") {
-                    vData = new Date((row[c.data]-25569)*86400*1000).toLocaleDateString("it-IT");
-                } else {
-                    vData = String(row[c.data]).split("T")[0];
-                }
-            }
-
-            let lat = parseFloat(String(row[c.lat]||"").replace(",","."));
-            let lon = parseFloat(String(row[c.lon]||"").replace(",","."));
-
-            /* =========================
-               FIX BASSANO + COMUNI
-            ========================= */
-            if (isNaN(lat) || isNaN(lon)) {
-                const key = normalizeKey(vComRaw);
-                const match = dbComuni[key];
-
-                if (match) {
-                    lat = match.lat;
-                    lon = match.lon;
-                } else {
-                    return; // non inventare coordinate
-                }
-            }
-
-            const safeLoc =
-                (vLocRaw && vLocRaw.trim() !== "")
-                    ? vLocRaw
-                    : vComRaw;
-
-            const marker = L.marker([lat, lon]).bindPopup(`
-                <div style="min-width:210px">
-                    <span class="specie-title">${vSpecie}</span>
-                    <div class="date-subtitle">Segnalazione del ${vData} ${vOra ? "ore "+vOra : ""}</div>
-                    <table class="popup-table">
-                        <tr><td class="label">Località:</td><td class="valore">${safeLoc}</td></tr>
-                        <tr><td class="label">Comune:</td><td class="valore">${vComRaw||""}</td></tr>
-                        <tr><td class="label">Provincia:</td><td class="valore">${vProv||""}</td></tr>
-                        <tr><td class="label">Stato:</td><td class="valore">${String(row[c.stato]||"")}</td></tr>
-                        <tr><td class="label">Condizioni:</td><td class="valore">${String(row[c.note]||"")}</td></tr>
-                    </table>
-                </div>
-            `);
-
-            allMarkers.push({marker, lat, lon});
-            markers.addLayer(marker);
-        });
-
-        map.addLayer(markers);
-
-        if (allMarkers.length) {
-            map.fitBounds(allMarkers.map(m => [m.lat, m.lon]));
-        }
-
-        document.getElementById("status").innerText = "✅ Sincronizzato";
-        document.getElementById("counter").innerText = "Totale: " + allMarkers.length;
-
-    } catch (e) {
-        console.error(e);
-        document.getElementById("status").innerText = "❌ Errore";
+    /* =========================
+       INDICE NORMALIZZATO
+    ========================= */
+    const indexComuni = {};
+    for (let k in dbComuni) {
+        indexComuni[normalizeKey(k)] = dbComuni[k];
     }
+
+    let response = await fetch('web/Pipistrelli 2025.xlsx?v=' + Date.now());
+    const data = new Uint8Array(await response.arrayBuffer());
+    const wb = XLSX.read(data, {type:'array'});
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, {header:1});
+
+    let hIdx = 0;
+    for (let i=0;i<rows.length&&i<20;i++) {
+        if (rows[i]?.some(c =>
+            String(c||"").toLowerCase().includes("speci") ||
+            String(c||"").toLowerCase().includes("data")
+        )) hIdx = i;
+    }
+
+    const header = rows[hIdx].map(h => String(h||"").toLowerCase());
+    const dataRows = rows.slice(hIdx+1);
+
+    const getCol = (t) => {
+        for (let i=0;i<header.length;i++)
+            for (let x of t)
+                if (header[i]?.includes(x)) return i;
+        return -1;
+    };
+
+    const c = {
+        specie: getCol(["specie animale"]),
+        data: getCol(["data segnalazione"]),
+        ora: getCol(["ora"]),
+        loc: getCol(["localita"]),
+        com: getCol(["comune"]),
+        prov: getCol(["provincia"]),
+        stato: getCol(["stato"]),
+        note: getCol(["condizioni al recupero"]),
+        lat: getCol(["latitudine"]),
+        lon: getCol(["longitudine"])
+    };
+
+    const cluster = L.markerClusterGroup();
+    let all = [];
+
+    dataRows.forEach(row => {
+        if (!row) return;
+
+        const comRaw = String(row[c.com]||"");
+        const key = normalizeKey(comRaw);
+
+        const match = findComune(key, indexComuni);
+        if (!match) return;
+
+        let lat = parseFloat(String(row[c.lat]||"").replace(",",".")) || match.lat;
+        let lon = parseFloat(String(row[c.lon]||"").replace(",",".")) || match.lon;
+
+        const marker = L.marker([lat, lon]).bindPopup(`
+            <div style="min-width:210px">
+                <b>${row[c.specie]||"Pipistrello"}</b><br>
+                <table class="popup-table">
+                    <tr><td class="label">Comune</td><td>${comRaw}</td></tr>
+                    <tr><td class="label">Provincia</td><td>${row[c.prov]||""}</td></tr>
+                    <tr><td class="label">Stato</td><td>${row[c.stato]||""}</td></tr>
+                    <tr><td class="label">Condizioni</td><td>${row[c.note]||""}</td></tr>
+                </table>
+            </div>
+        `);
+
+        cluster.addLayer(marker);
+        all.push([lat, lon]);
+    });
+
+    map.addLayer(cluster);
+    if (all.length) map.fitBounds(all);
+
+    document.getElementById("status").innerText = "OK";
+    document.getElementById("counter").innerText = "Totale: " + all.length;
 }
 
 init();
