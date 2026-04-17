@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <title>BatMaps 2025 - Versione 17.9</title>
+    <title>BatMaps 2025 - Versione 17.10</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -52,7 +52,7 @@
         if (t.includes("venezia") || t.includes("eraclea") || t.includes("mestre")) return "VE";
         if (t.includes("verona")) return "VR";
         if (t.includes("treviso") || t.includes("cappella maggiore")) return "TV";
-        if (t.includes("vicenza") || t.includes("bassano") || t.includes("asiago") || t.includes("castelgomberto") || t.includes("san vito di leguzzano") || t.includes("arcugnano") || t.includes("marano vicentino") || t.includes("breganze") || t.includes("costabissara")) return "VI";
+        if (t.includes("vicenza") || t.includes("bassano") || t.includes("asiago") || t.includes("castelgomberto") || t.includes("san vito") || t.includes("arcugnano") || t.includes("marano vicentino") || t.includes("breganze") || t.includes("costabissara")) return "VI";
         if (t.includes("modena")) return "MO";
         if (t.includes("bergamo")) return "BG";
         if (t.includes("ragusa")) return "RG";
@@ -87,45 +87,54 @@
             const rows = XLSX.utils.sheet_to_json(sheet, {header: 1});
 
             let hIdx = 0;
-            for(let i=0; i<rows.length; i++) {
-                if(rows[i] && rows[i].some(c => String(c).toLowerCase().includes("speci"))) { hIdx = i; break; }
+            for(let i=0; i<rows.length && i<20; i++) {
+                if(rows[i] && rows[i].some(c => {
+                    let s = String(c || "").toLowerCase();
+                    return s.includes("speci") || s.includes("data");
+                })) { hIdx = i; break; }
             }
             const header = rows[hIdx].map(h => String(h || "").toLowerCase().trim());
             const dataRows = rows.slice(hIdx + 1);
 
             const getCol = (targets) => {
-                for(let t of targets) { let idx = header.indexOf(t); if(idx !== -1) return idx; }
+                for(let t of targets) {
+                    let idx = header.findIndex(h => h.includes(t));
+                    if(idx !== -1) return idx;
+                }
                 return -1;
             };
 
             const c = {
-                specie: getCol(["specie animale", "specie"]),
-                data: getCol(["data segnalazione", "data"]),
+                specie: getCol(["specie"]),
+                data: getCol(["data"]),
                 ora: getCol(["ora"]),
-                loc: getCol(["località", "localit"]),
+                loc: getCol(["localit"]),
                 com: getCol(["comune"]),
-                prov: getCol(["provincia"]),
+                prov: getCol(["provin"]),
                 stato: getCol(["stato"]),
-                note: getCol(["condizioni al recupero", "note"]),
-                lat: getCol(["latitudine"]),
-                lon: getCol(["longitudine"])
+                note: getCol(["condizioni", "note"]),
+                lat: getCol(["latitud"]),
+                lon: getCol(["longitud"])
             };
 
             const markers = L.markerClusterGroup();
             let count = 0;
 
             dataRows.forEach(row => {
-                if (!row || row.length < 3) return;
-                let vSpecie = row[c.specie] || "Pipistrello";
-                let vCom = String(row[c.com] || "").trim();
-                let vLoc = String(row[c.loc] || "").trim();
-                let vProv = String(row[c.prov] || "").trim();
+                if (!row || row.length < 2) return;
+
+                let vSpecie = String(row[c.specie] || "Pipistrello").trim();
                 let vDataRaw = row[c.data];
+                if (!vSpecie && !vDataRaw) return;
+
+                let vCom = String(row[c.com] || "").trim() || "-";
+                let vLoc = String(row[c.loc] || "").trim() || "-";
+                let vProvOrig = String(row[c.prov] || "").trim();
                 let vOra = formatTime(row[c.ora]);
 
                 let rigaTesto = row.join(" ");
-                let sigla = getProvSigla(rigaTesto);
-                if (vProv.length !== 2) vProv = sigla;
+                let siglaAuto = getProvSigla(rigaTesto);
+                let vProv = (vProvOrig.length === 2) ? vProvOrig.toUpperCase() : siglaAuto;
 
                 let vData = "-";
                 if (vDataRaw) {
@@ -145,9 +154,9 @@
                 const getV = (idx) => (idx !== -1 && row[idx]) ? String(row[idx]).trim() : "-";
 
                 const popup = `
-                    <div style="min-width:220px">
+                    <div style="min-width:240px">
                         <span class="specie-title">${vSpecie}</span>
-                        <div class="date-subtitle">Segnalazione del ${vData} ${vOra ? 'ore '+vOra : ''}</div>
+                        <div class="date-subtitle">Segnalazione del ${vData} ${vOra ? 'alle ore '+vOra : ''}</div>
                         <table class="popup-table">
                             <tr><td class="label">Località:</td><td class="valore">${vLoc}</td></tr>
                             <tr><td class="label">Comune:</td><td class="valore">${vCom}</td></tr>
@@ -163,7 +172,7 @@
             map.addLayer(markers);
             document.getElementById('status').innerText = "✅ Sincronizzato";
             document.getElementById('counter').innerText = "Totale: " + count;
-        } catch (e) { console.error(e); }
+        } catch (e) { console.error(e); document.getElementById('status').innerText = "❌ Errore caricamento"; }
     }
     init();
 </script>
