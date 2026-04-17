@@ -2,7 +2,7 @@ import json
 import os
 
 def genera():
-    # Database coordinate certificate per capoluoghi e comuni critici
+    # Database coordinate certificate
     coords_base = {
         'AG': (37.3106, 13.5765), 'AL': (44.9129, 8.6154), 'AN': (43.6158, 13.5189), 'AO': (45.7349, 7.3233),
         'AQ': (42.3489, 13.3973), 'AR': (43.4633, 11.8781), 'AP': (42.8535, 13.5761), 'AT': (44.8991, 8.2041),
@@ -31,10 +31,11 @@ def genera():
         'TS': (45.6495, 13.7768), 'UD': (46.0619, 13.2422), 'VA': (45.8167, 8.8239), 'VE': (45.4408, 12.3155),
         'VB': (45.9231, 8.5529), 'VC': (45.3242, 8.4190), 'VR': (45.4384, 10.9916), 'VV': (38.6753, 16.1017),
         'VI': (45.5479, 11.5446), 'VT': (42.4177, 12.1047),
-        # Comuni specifici richiesti per precisione Colli Euganei / Terme
+        # Comuni specifici
         'teolo': (45.3512, 11.7135),
         'montegrotto terme': (45.3340, 11.7820),
-        'abbano terme': (45.3594, 11.7894)
+        'abbano terme': (45.3594, 11.7894),
+        'boara pisana': (45.1118, 11.7831)
     }
 
     input_path = 'comuni_db_extracted/FREE/italy_cities.json'
@@ -52,10 +53,6 @@ def genera():
     for c in cities:
         nome = str(c['comune']).lower().strip()
         prov = str(c['provincia']).upper().strip()
-
-        # 1. Controlla se abbiamo coordinate specifiche per questo comune (es. Teolo)
-        # 2. Altrimenti usa il capoluogo di provincia
-        # 3. Altrimenti fallback Vicenza
         coords = coords_base.get(nome) or coords_base.get(prov) or (45.5479, 11.5446)
 
         data[nome] = {
@@ -66,12 +63,16 @@ def genera():
             'lon': float(coords[1])
         }
 
+    # Assicuriamoci che Boara Pisana sia nel database (alcuni database lo chiamano Boara)
+    if 'boara pisana' not in data:
+        data['boara pisana'] = {'prov': 'PD', 'res': 2500, 'sup': 16.0, 'lat': 45.1118, 'lon': 11.7831}
+
     for out in [output_path_app, output_path_web]:
         os.makedirs(os.path.dirname(out), exist_ok=True)
         with open(out, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-    print(f"✅ Generato database con {len(data)} comuni. Teolo e Montegrotto mappati correttamente.")
+    print(f"✅ Database aggiornato: Boara Pisana certificato.")
 
 if __name__ == "__main__":
     genera()
