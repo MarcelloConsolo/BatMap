@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <title>BatMaps 2025 - Versione 17.3</title>
+    <title>BatMaps 2025 - Versione 17.4</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -24,6 +24,7 @@
         .label { font-weight: bold; color: #7f8c8d; width: 85px; }
         .valore { color: #2c3e50; font-weight: 500; }
         .specie-title { color: #2980b9; font-size: 1.2em; font-weight: bold; display: block; }
+        .date-subtitle { font-size: 0.85em; color: #95a5a6; font-style: italic; margin-bottom: 8px; }
     </style>
 </head>
 <body>
@@ -37,15 +38,15 @@
     const map = L.map('map').setView([45.5479, 11.5446], 9);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    function getProvincia(rigaTesto) {
-        let t = String(rigaTesto).toLowerCase();
+    function getProvincia(riga) {
+        let t = riga.toLowerCase();
         if (t.includes("padova")) return "PD";
         if (t.includes("venezia") || t.includes("eraclea") || t.includes("mestre") || t.includes("jesolo")) return "VE";
         if (t.includes("verona")) return "VR";
         if (t.includes("treviso")) return "TV";
         if (t.includes("rovigo") || t.includes("adria")) return "RO";
         if (t.includes("belluno")) return "BL";
-        if (t.includes("vicenza") || t.includes("bassano") || t.includes("asiago") || t.includes("schio")) return "VI";
+        if (t.includes("vicenza") || t.includes("bassano") || t.includes("asiago")) return "VI";
         return "-";
     }
 
@@ -66,34 +67,69 @@
 
             const getCol = (targets) => {
                 for(let t of targets) { let idx = header.indexOf(t); if(idx !== -1) return idx; }
+                for(let t of targets) { let idx = header.findIndex(h => h.includes(t)); if(idx !== -1) return idx; }
                 return -1;
             };
 
-            const c = { specie: getCol(["specie"]), loc: getCol(["località", "localit"]), com: getCol(["comune"]), prov: getCol(["provincia"]), lat: getCol(["lat"]), lon: getCol(["lon"]) };
+            const c = {
+                specie: getCol(["specie"]),
+                data: getCol(["data"]),
+                ora: getCol(["ora"]),
+                loc: getCol(["località", "localit"]),
+                com: getCol(["comune"]),
+                prov: getCol(["provincia"]),
+                stato: getCol(["stato"]),
+                note: getCol(["condizioni", "note"]),
+                lat: getCol(["lat"]),
+                lon: getCol(["lon"])
+            };
 
             const markers = L.markerClusterGroup();
             let count = 0;
 
             dataRows.forEach(row => {
                 if (!row || row.length < 3) return;
+                let vSpecie = row[c.specie] || "Pipistrello";
+                let vCom = String(row[c.com] || "").trim();
+                let vLoc = String(row[c.loc] || "").trim();
+                let vProv = String(row[c.prov] || "").trim();
+                let vDataRaw = row[c.data];
+                let vOra = row[c.ora] || "";
+
                 let rigaTesto = row.join(" ");
-                let vProv = getProvincia(rigaTesto);
+                if (!vProv || vProv === "-" || vProv === "nan") vProv = getProvincia(rigaTesto);
+
+                let vData = "-";
+                if (vDataRaw) {
+                    if (typeof vDataRaw === 'number') vData = new Date((vDataRaw - 25569) * 86400 * 1000).toLocaleDateString('it-IT');
+                    else vData = String(vDataRaw).split("T")[0];
+                }
 
                 let lat = parseFloat(String(row[c.lat] || 0).replace(",", "."));
                 let lon = parseFloat(String(row[c.lon] || 0).replace(",", "."));
 
                 if (!lat || isNaN(lat) || lat === 0) {
-                    if (vProv === "PD") { lat = 45.4064; lon = 11.8768; }
-                    else if (vProv === "VE") { lat = 45.4408; lon = 12.3155; }
-                    else if (vProv === "VR") { lat = 45.4384; lon = 10.9916; }
-                    else if (vProv === "TV") { lat = 45.6669; lon = 12.2431; }
-                    else if (vProv === "RO") { lat = 45.0711; lon = 11.7907; }
-                    else if (vProv === "BL") { lat = 46.1425; lon = 12.2167; }
-                    else { lat = 45.5479; lon = 11.5446; }
-                    lat += (Math.random()-0.5)*0.1; lon += (Math.random()-0.5)*0.1;
+                    const coords = { "PD": [45.4064, 11.8768], "VE": [45.4408, 12.3155], "VR": [45.4384, 10.9916], "TV": [45.6669, 12.2431], "RO": [45.0711, 11.7907], "BL": [46.1425, 12.2167], "VI": [45.5479, 11.5446] };
+                    const base = coords[vProv] || coords["VI"];
+                    lat = base[0] + (Math.random()-0.5)*0.1;
+                    lon = base[1] + (Math.random()-0.5)*0.1;
                 }
 
-                const popup = `<div style="min-width:200px"><span class="specie-title">${row[c.specie] || "Pipistrello"}</span><table class="popup-table"><tr><td class="label">Comune:</td><td>${row[c.com] || "-"}</td></tr><tr><td class="label">Provincia:</td><td>${vProv}</td></tr></table></div>`;
+                const getV = (idx) => (idx !== -1 && row[idx]) ? String(row[idx]).trim() : "-";
+
+                const popup = `
+                    <div style="min-width:220px">
+                        <span class="specie-title">${vSpecie}</span>
+                        <div class="date-subtitle">Segnalazione del ${vData} ${vOra ? 'ore '+vOra : ''}</div>
+                        <table class="popup-table">
+                            <tr><td class="label">Località:</td><td class="valore">${vLoc}</td></tr>
+                            <tr><td class="label">Comune:</td><td class="valore">${vCom}</td></tr>
+                            <tr><td class="label">Provincia:</td><td class="valore">${vProv}</td></tr>
+                            <tr><td class="label">Stato:</td><td class="valore">${getV(c.stato)}</td></tr>
+                            <tr><td class="label">Note:</td><td class="valore">${getV(c.note)}</td></tr>
+                        </table>
+                    </div>`;
+
                 markers.addLayer(L.marker([lat, lon]).bindPopup(popup));
                 count++;
             });
