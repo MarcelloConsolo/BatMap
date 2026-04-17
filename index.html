@@ -180,7 +180,7 @@
                         </table>
                     </div>`;
 
-                markers.addLayer(L.marker([lat, lon]).bindPopup(popup));
+                markers.addLayer(L.marker([lat, lon], {icon: customIcon}).bindPopup(popup));
                 count++;
             });
             map.addLayer(markers);
