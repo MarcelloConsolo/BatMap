@@ -127,14 +127,30 @@
                 let vDataRaw = row[c.data];
                 if (!vSpecie && !vDataRaw) return;
 
-                let vCom = String(row[c.com] || "").trim() || "-";
-                let vLoc = String(row[c.loc] || "").trim() || "-";
+                let vCom = String(row[c.com] || "").trim();
+                let vLoc = String(row[c.loc] || "").trim();
                 let vProvOrig = String(row[c.prov] || "").trim();
                 let vOra = formatTime(row[c.ora]);
 
-                let rigaTesto = row.join(" ");
-                let siglaAuto = getProvSigla(rigaTesto);
-                let vProv = (vProvOrig.length === 2) ? vProvOrig.toUpperCase() : siglaAuto;
+                // Logica di priorità: Località -> Comune -> Provincia
+                function determinaProvincia(loc, com, prov, riga) {
+                    let r = riga.toLowerCase();
+                    // 1. & 2. Località e Comune (Total Scan della riga per match sicuri)
+                    if (r.includes("padova") || r.includes("san martino di lupari")) return "PD";
+                    if (r.includes("venezia") || r.includes("eraclea") || r.includes("mestre")) return "VE";
+                    if (r.includes("verona")) return "VR";
+                    if (r.includes("treviso") || r.includes("cappella maggiore")) return "TV";
+                    if (r.includes("vicenza") || r.includes("bassano") || r.includes("asiago") || r.includes("castelgomberto") || r.includes("san vito") || r.includes("arcugnano") || r.includes("marano vicentino") || r.includes("breganze") || r.includes("costabissara") || r.includes("carrè") || r.includes("santorso") || r.includes("sossano")) return "VI";
+                    if (r.includes("modena")) return "MO";
+                    if (r.includes("bergamo")) return "BG";
+
+                    // 3. Provincia esplicita (se sigla di 2 lettere)
+                    if (prov.length === 2) return prov.toUpperCase();
+
+                    return "VI"; // Default
+                }
+
+                let vProv = determinaProvincia(vLoc, vCom, vProvOrig, row.join(" "));
 
                 let vData = "-";
                 if (vDataRaw) {
