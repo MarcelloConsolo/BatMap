@@ -86,18 +86,31 @@ fun OSMMapView(punti: List<Pair<Segnalazione, GeoPoint>>) {
         MapView(context).apply {
             setTileSource(TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
-            controller.setZoom(9.0)
-            controller.setCenter(GeoPoint(45.5479, 11.5446))
+            controller.setZoom(6.0) // Zoom out iniziale per vedere l'Italia
+            controller.setCenter(GeoPoint(41.9, 12.5)) // Centro Italia
         }
     }
 
     LaunchedEffect(punti) {
+        if (punti.isEmpty()) return@LaunchedEffect
+        
         mapView.overlays.clear()
+        
+        // Calcolo bounding box per inquadrare tutti i punti
+        var minLat = 90.0; var maxLat = -90.0
+        var minLon = 180.0; var maxLon = -180.0
+
         punti.forEach { (info, coordinata) ->
             val marker = Marker(mapView)
             marker.position = coordinata
             marker.title = info.specie
             
+            // Aggiorna limiti per zoom automatico
+            minLat = minOf(minLat, coordinata.latitude)
+            maxLat = maxOf(maxLat, coordinata.latitude)
+            minLon = minOf(minLon, coordinata.longitude)
+            maxLon = maxOf(maxLon, coordinata.longitude)
+
             // Imposta colore in base allo stato
             val statoLower = info.stato.lowercase()
             val color = when {
@@ -116,6 +129,15 @@ fun OSMMapView(punti: List<Pair<Segnalazione, GeoPoint>>) {
                              "Condizioni: ${info.note}"
             mapView.overlays.add(marker)
         }
+        
+        // Auto-zoom per inquadrare tutti i punti
+        if (punti.isNotEmpty()) {
+            mapView.zoomToBoundingBox(
+                org.osmdroid.util.BoundingBox(maxLat + 0.5, maxLon + 0.5, minLat - 0.5, minLon - 0.5),
+                true
+            )
+        }
+
         mapView.invalidate()
     }
     AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
