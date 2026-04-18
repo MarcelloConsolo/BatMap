@@ -368,22 +368,31 @@ fun leggiExcel(context: Context): List<Pair<Segnalazione, GeoPoint>> {
             // 1. IL COMUNE: Standardizzato dal database
             val comuneDisplay = res.nome.split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
 
-            // 2. LA LOCALITÀ: Conservativa
-            // Come richiesto: se nella località c'è il comune, lo lasciamo. 
-            // Non facciamo più pulizie aggressive che rischiano di svuotare il campo.
+            // 2. LA LOCALITÀ: Pulizia intelligente
             var localitaDisplay = localitaRaw.replace('\u00A0', ' ').trim()
+            val comuneLower = res.nome.lowercase()
+            val localitaLower = localitaDisplay.lowercase()
 
-            if (localitaDisplay.isBlank() || localitaDisplay == "-") {
-                // Se la località è proprio vuota, usiamo il nome del comune come fallback per non lasciare il campo vuoto
-                localitaDisplay = comuneDisplay
+            if (localitaLower.contains(comuneLower)) {
+                // Proviamo a rimuovere il comune e vedere cosa resta
+                val regex = Regex("[,\\s]*${Regex.escape(comuneLower)}[,\\s]*", RegexOption.IGNORE_CASE)
+                val restanti = localitaDisplay.replace(regex, " ").trim()
+                
+                // Se dopo aver tolto il comune RESTA qualcosa (es. "Via Raccola 17"), 
+                // allora usiamo la versione pulita.
+                if (restanti.isNotBlank()) {
+                    localitaDisplay = restanti
+                }
+                // Se invece non resta nulla (significa che c'era solo il comune), 
+                // NON facciamo nulla e lo lasciamo così com'è (non sparisce).
             }
 
-            // Pulizia minima solo di spazi/punteggiatura estrema
+            // Pulizia finale punteggiatura residua
             localitaDisplay = localitaDisplay
                 .replace(Regex("^[,\\s.-]+"), "")
                 .replace(Regex("[,\\s.-]+$"), "")
                 .trim()
-                .ifBlank { comuneDisplay } // Se ancora vuoto, metti il comune
+                .ifBlank { comuneDisplay }
                 .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
 
             var lat = getCellDouble(row, colMap["lat"] ?: -1)
