@@ -358,41 +358,30 @@ fun leggiExcel(context: Context): List<Pair<Segnalazione, GeoPoint>> {
             
             val dataFull = if (oRaw.isNotBlank() && oRaw != "-") "Segnalazione del $dRaw alle ore $oRaw" else "Segnalazione del $dRaw"
             
-            val localitaRaw = formatter.formatCellValue(row.getCell(colMap["loc"] ?: -1)).trim()
+            val localitaRaw = formatter.formatCellValue(row.getCell(colMap["loc"] ?: -1)).trim().replace('\u00A0', ' ')
             val comuneRaw = formatter.formatCellValue(row.getCell(colMap["comune"] ?: -1)).trim()
-                .split(" ").joinToString(" ") { it.replaceFirstChar { c -> if (c.isLowerCase()) c.titlecase(Locale.getDefault()) else c.toString() } }
             val provinciaRaw = formatter.formatCellValue(row.getCell(colMap["prov"] ?: -1)).trim()
 
-            // Ottieni dati dal database basato sulla priorità: Comune -> Località -> Provincia
+            // Ottieni dati dal database (cercaDati già controlla se la località contiene un comune)
             val res = ComuniDatabase.cercaDati(comuneRaw, localitaRaw, provinciaRaw)
             
-            // 1. Comune da visualizzare (tutte le parole maiuscole)
-            val comuneDisplay = if (comuneRaw.isBlank() || comuneRaw == "-") {
-                res.nome.split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
-            } else {
-                comuneRaw
-            }
+            // 1. IL COMUNE: Priorità al database (che ha già estratto il comune dalla località se mancava)
+            val comuneDisplay = res.nome.split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
 
-            // 2. PULIZIA LOCALITÀ: Rimuoviamo il nome del comune dalla stringa della località
-            var localitaDisplay = localitaRaw.replace('\u00A0', ' ') // Rimuove spazi Excel invisibili
-            val nomiDaRimuovere = mutableSetOf<String>()
-            if (comuneDisplay.isNotBlank() && comuneDisplay != "-") nomiDaRimuovere.add(comuneDisplay)
-            if (res.nome.isNotBlank()) nomiDaRimuovere.add(res.nome)
-
-            for (nome in nomiDaRimuovere) {
-                val paroleComune = nome.split(Regex("[,\\s-]+")).filter { it.length > 2 }
-                if (paroleComune.isEmpty()) continue
-                
-                // Crea una regex che cerca le parole del comune separate da qualsiasi punteggiatura/spazio
+            // 2. LA LOCALITÀ: Rimuoviamo il nome del comune trovato (spostandolo idealmente di riga)
+            var localitaDisplay = localitaRaw
+            val paroleComune = res.nome.split(Regex("[,\\s-]+")).filter { it.length > 2 }
+            
+            if (paroleComune.isNotEmpty()) {
                 val pattern = paroleComune.joinToString("[\\s,.-]+") { Regex.escape(it) }
                 localitaDisplay = localitaDisplay.replace(Regex(pattern, RegexOption.IGNORE_CASE), "")
             }
 
-            // Pulizia finale: rimuove virgole doppie, spazi extra e punteggiatura residua
+            // Pulizia finale della località
             localitaDisplay = localitaDisplay
-                .replace(Regex("[,\\s]+"), " ") // Trasforma tutto in spazi singoli
-                .replace(Regex("^[,\\s.-]+"), "") // Rimuove all'inizio
-                .replace(Regex("[,\\s.-]+$"), "") // Rimuove alla fine
+                .replace(Regex("[,\\s]+"), " ")
+                .replace(Regex("^[,\\s.-]+"), "")
+                .replace(Regex("[,\\s.-]+$"), "")
                 .trim()
 
             if (localitaDisplay.isBlank()) localitaDisplay = "-"
