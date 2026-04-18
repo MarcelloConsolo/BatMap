@@ -362,37 +362,40 @@ fun leggiExcel(context: Context): List<Pair<Segnalazione, GeoPoint>> {
             val comuneRaw = formatter.formatCellValue(row.getCell(colMap["comune"] ?: -1)).trim()
             val provinciaRaw = formatter.formatCellValue(row.getCell(colMap["prov"] ?: -1)).trim()
 
-            // Ottieni dati dal database (cercaDati già controlla se la località contiene un comune)
+            // Ottieni dati dal database
             val res = ComuniDatabase.cercaDati(comuneRaw, localitaRaw, provinciaRaw)
             
-            // 1. IL COMUNE: Lo prendiamo dal database (standardizzato)
-            val comuneDisplay = res.nome.split(" ").joinToString(" ") { it.replaceFirstChar { c -> if (c.isLowerCase()) c.titlecase(Locale.getDefault()) else c.toString() } }
+            // 1. IL COMUNE: Standardizzato dal database
+            val comuneDisplay = res.nome.split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
 
-            // 2. LA LOCALITÀ: Rimuoviamo il comune in modo aggressivo
-            var localitaDisplay = localitaRaw.replace('\u00A0', ' ')
-            val daRimuovere = mutableSetOf<String>()
-            daRimuovere.add(res.nome.lowercase())
-            if (comuneRaw.isNotBlank() && comuneRaw != "-") daRimuovere.add(comuneRaw.lowercase())
-
-            for (s in daRimuovere) {
-                if (s.length < 3) continue
-                // Rimuove la stringa intera (es. "Galzignano Terme")
-                localitaDisplay = localitaDisplay.replace(s, "", ignoreCase = true)
-                // Rimuove anche le singole parole componenti (es. "Galzignano") per sicurezza
-                s.split(Regex("[\\s,.-]+")).filter { it.length > 3 }.forEach { parola ->
-                    localitaDisplay = localitaDisplay.replace(Regex("\\b${Regex.escape(parola)}\\b", RegexOption.IGNORE_CASE), "")
+            // 2. LA LOCALITÀ: Spostamento condizionale
+            var localitaDisplay = localitaRaw.replace('\u00A0', ' ').trim()
+            
+            // Proviamo a rimuovere il comune dalla località solo se c'è altro testo (es. la via)
+            val comuneLower = res.nome.lowercase()
+            val localitaLower = localitaDisplay.lowercase()
+            
+            if (localitaLower.contains(comuneLower)) {
+                // Rimuoviamo il comune e la punteggiatura circostante
+                val regex = Regex("[,\\s]*${Regex.escape(comuneLower)}[,\\s]*", RegexOption.IGNORE_CASE)
+                val pulita = localitaDisplay.replace(regex, " ").trim()
+                
+                // Se dopo la pulizia rimane qualcosa (es. "Via Roma 1"), usiamo la versione pulita
+                // Se invece non rimane nulla, significa che la località ERA il comune: in questo caso mettiamo "-"
+                localitaDisplay = if (pulita.isBlank() || pulita == localitaDisplay) {
+                    if (localitaLower == comuneLower) "-" else localitaDisplay
+                } else {
+                    pulita
                 }
             }
 
-            // Pulizia finale della località: rimuove punteggiatura orfana e spazi doppi
+            // Pulizia finale
             localitaDisplay = localitaDisplay
-                .replace(Regex("[,\\s.-]+"), " ")
                 .replace(Regex("^[,\\s.-]+"), "")
                 .replace(Regex("[,\\s.-]+$"), "")
                 .trim()
-
-            if (localitaDisplay.isBlank()) localitaDisplay = "-"
-            else localitaDisplay = localitaDisplay.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+                .ifBlank { "-" }
+                .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
 
             var lat = getCellDouble(row, colMap["lat"] ?: -1)
             var lon = getCellDouble(row, colMap["lon"] ?: -1)
