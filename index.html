@@ -40,23 +40,7 @@
 <div id="overlay">
     <b style="font-size:1.2em; color: #2c3e50;">BatMaps 2025</b><br>
     <div id="status" style="color: #7f8c8d; font-size: 0.9em; margin: 5px 0;">Sincronizzazione Excel...</div>
-    <div id="counter" style="font-size: 1.2em; font-weight: bold; color: #27ae60; margin-bottom:10px;"></div>
-
-    <!-- LEGENDA -->
-    <div style="border-top:1px solid #eee; padding-top:8px; font-size:0.85em;">
-        <div style="font-weight:bold; margin-bottom:5px; color:#2c3e50;">Legenda</div>
-
-        <div>
-            🟢 Recuperato
-            <div style="margin-left:18px; font-size:0.8em; color:#7f8c8d;">
-                dalla madre
-            </div>
-        </div>
-
-        <div>🔴 Morto</div>
-        <div>🟡 In degenza</div>
-        <div>🔵 Altro</div>
-    </div>
+    <div id="counter" style="font-size: 1.2em; font-weight: bold; color: #27ae60;"></div>
 </div>
 
 <div id="map"></div>
@@ -70,6 +54,11 @@ const normalize = (str) =>
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "")
         .trim();
+
+// 🔧 FIX CRITICO → escape regex
+function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
@@ -90,6 +79,8 @@ function formatTime(val) {
     return s;
 }
 
+const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : "-";
+
 async function init() {
     try {
         let dbComuni = await (await fetch('web/comuni_italiani.json')).json();
@@ -101,7 +92,16 @@ async function init() {
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(sheet, {header: 1});
 
-        let header = rows[0].map(h => String(h || "").toLowerCase());
+        let hIdx = 0;
+        for(let i=0; i<rows.length && i<20; i++) {
+            if(rows[i] && rows[i].some(c => {
+                let s = String(c || "").toLowerCase();
+                return s.includes("speci") || s.includes("data");
+            })) { hIdx = i; break; }
+        }
+
+        const header = rows[hIdx].map(h => String(h || "").toLowerCase());
+        const dataRows = rows.slice(hIdx + 1);
 
         const getCol = (targets) => {
             for (let i = 0; i < header.length; i++) {
@@ -128,7 +128,7 @@ async function init() {
         const markers = L.markerClusterGroup();
         let allMarkers = [];
 
-        rows.slice(1).forEach(row => {
+        dataRows.forEach(row => {
             if (!row || row.length < 2) return;
 
             let vSpecie = String(row[c.specie] || "Pipistrello").trim();
@@ -139,15 +139,13 @@ async function init() {
 
             let vLocDisp = vLocRaw;
 
-            // ✔ FIX ROBUSTO LOCALITÀ
+            // 🔥 FIX DEFINITIVO LOCALITÀ
             if (vComDisp && vLocDisp) {
-                let comNorm = normalize(vComDisp);
-                let locNorm = normalize(vLocDisp);
+                let searchName = vComDisp.split('(')[0].trim();
+                let safeName = escapeRegex(searchName);
 
-                if (locNorm.includes(comNorm)) {
-                    let regex = new RegExp(`[,\\s]*${vComDisp}[,\\s]*`, 'gi');
-                    vLocDisp = vLocDisp.replace(regex, ' ');
-                }
+                let regex = new RegExp(`[,\\s]*${safeName}[,\\s]*`, 'gi');
+                vLocDisp = vLocDisp.replace(regex, ' ');
             }
 
             vLocDisp = vLocDisp
@@ -190,6 +188,7 @@ async function init() {
             const popup = `
                 <div style="min-width:210px">
                     <span class="specie-title">${vSpecie}</span>
+                    <div class="date-subtitle">Segnalazione ${vOra ? 'ore '+vOra : ''}</div>
                     <table class="popup-table">
                         <tr><td class="label">Località:</td><td class="valore">${vLocDisp}</td></tr>
                         <tr><td class="label">Comune:</td><td class="valore">${vComDisp}</td></tr>
