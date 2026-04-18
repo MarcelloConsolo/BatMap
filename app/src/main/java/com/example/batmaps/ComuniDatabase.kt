@@ -59,8 +59,8 @@ object ComuniDatabase {
 
     fun cercaDati(comune: String, localita: String, provincia: String): Result {
         val p = provincia.uppercase().trim()
-        val c = comune.lowercase().trim()
-        val l = localita.lowercase().trim()
+        val c = comune.lowercase().trim().replace('\u00A0', ' ')
+        val l = localita.lowercase().trim().replace('\u00A0', ' ')
 
         // 1. Priorità: Comune esatto nel DB
         databaseCompleto[c]?.let {
@@ -68,8 +68,11 @@ object ComuniDatabase {
         }
 
         // 2. Priorità: Località (cerca se il testo della località contiene un nome di comune)
-        for ((nome, info) in databaseCompleto) {
+        // Ordiniamo per lunghezza decrescente per evitare match parziali (es. "Sesto" invece di "Sesto San Giovanni")
+        val comuniOrdinati = databaseCompleto.keys.sortedByDescending { it.length }
+        for (nome in comuniOrdinati) {
             if (nome.length > 3 && l.contains(nome)) {
+                val info = databaseCompleto[nome]!!
                 return Result(nome, info.prov, info.reg, info.lat, info.lon)
             }
         }
