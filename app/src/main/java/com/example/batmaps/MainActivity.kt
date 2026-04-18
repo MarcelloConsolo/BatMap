@@ -55,27 +55,49 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun BatMapScreen() {
     val context = LocalContext.current
-    var segnalazioni by remember { mutableStateOf<List<Pair<Segnalazione, GeoPoint>>>(emptyList()) }
+    var tutteLeSegnalazioni by remember { mutableStateOf<List<Pair<Segnalazione, GeoPoint>>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    
+    // Stati per i filtri
+    var filtroSpecie by remember { mutableStateOf("Tutte") }
+    var filtroRegione by remember { mutableStateOf("Tutte") }
+    var filtroStato by remember { mutableStateOf("Tutti") }
+    var showFilterDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         ComuniDatabase.initialize(context)
-        segnalazioni = withContext(Dispatchers.IO) { leggiExcel(context) }
+        tutteLeSegnalazioni = withContext(Dispatchers.IO) { leggiExcel(context) }
         isLoading = false
     }
 
-    Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+    val segnalazioniFiltrate = remember(tutteLeSegnalazioni, filtroSpecie, filtroRegione, filtroStato) {
+        tutteLeSegnalazioni.filter { (s, _) ->
+            (filtroSpecie == "Tutte" || s.specie == filtroSpecie) &&
+            (filtroRegione == "Tutte" || s.regione == filtroRegione) &&
+            (filtroStato == "Tutti" || s.stato.contains(filtroStato, ignoreCase = true))
+        }
+    }
+
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        floatingActionButton = {
+            FloatingActionButton(onClick = { showFilterDialog = true }) {
+                Text("Filtri", modifier = Modifier.padding(horizontal = 16.dp))
+            }
+        }
+    ) { innerPadding ->
         Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
             if (isLoading) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             } else {
-                OSMMapView(segnalazioni)
+                OSMMapView(segnalazioniFiltrate)
+                
                 // Box per il Totale
                 Box(
                     modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)
                         .background(Color.White.copy(alpha = 0.8f), MaterialTheme.shapes.medium).padding(8.dp)
                 ) {
-                    Text("Totale: ${segnalazioni.size}", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    Text("Totale: ${segnalazioniFiltrate.size} / ${tutteLeSegnalazioni.size}", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                 }
 
                 // Box per la Legenda
@@ -95,6 +117,96 @@ fun BatMapScreen() {
                         LegendItem(Color(41, 128, 185), "Altro")
                     }
                 }
+            }
+        }
+    }
+
+    if (showFilterDialog) {
+        FilterDialog(
+            tutteLeSegnalazioni.map { it.first },
+            currentSpecie = filtroSpecie,
+            currentRegione = filtroRegione,
+            onDismiss = { showFilterDialog = false },
+            onApply = { s, r ->
+                filtroSpecie = s
+                filtroRegione = r
+                showFilterDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+fun FilterDialog(
+    segnalazioni: List<Segnalazione>,
+    currentSpecie: String,
+    currentRegione: String,
+    onDismiss: () -> Unit,
+    onApply: (String, String) -> Unit
+) {
+    var tempSpecie by remember { mutableStateOf(currentSpecie) }
+    var tempRegione by remember { mutableStateOf(currentRegione) }
+
+    val specieUniche = remember(segnalazioni) {
+        listOf("Tutte") + segnalazioni.map { it.specie }.distinct().filter { it.isNotBlank() }.sorted()
+    }
+    val regioniUniche = remember(segnalazioni) {
+        listOf("Tutte") + segnalazioni.map { it.regione }.distinct().filter { it.isNotBlank() }.sorted()
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Filtra Segnalazioni") },
+        text = {
+            Column {
+                Text("Specie", style = MaterialTheme.typography.labelMedium)
+                FilterDropdown(specieUniche, tempSpecie) { tempSpecie = it }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Text("Regione", style = MaterialTheme.typography.labelMedium)
+                FilterDropdown(regioniUniche, tempRegione) { tempRegione = it }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onApply(tempSpecie, tempRegione) }) {
+                Text("Applica")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Annulla") }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FilterDropdown(options: List<String>, selected: String, onSelected: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded }
+    ) {
+        TextField(
+            value = selected,
+            onValueChange = {},
+            readOnly = true,
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.menuAnchor().fillMaxWidth(),
+            colors = ExposedDropdownMenuDefaults.textFieldColors()
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option) },
+                    onClick = {
+                        onSelected(option)
+                        expanded = false
+                    }
+                )
             }
         }
     }

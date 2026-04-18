@@ -15,9 +15,7 @@ object ComuniDatabase {
         val prov: String,
         val reg: String,
         val lat: Double,
-        val lon: Double,
-        val residenti: Int,
-        val superficie: Double
+        val lon: Double
     )
 
     fun initialize(context: Context) {
@@ -40,9 +38,7 @@ object ComuniDatabase {
                     prov = item.getString("prov"),
                     reg = item.optString("reg", "-"),
                     lat = item.getDouble("lat"),
-                    lon = item.getDouble("lon"),
-                    residenti = item.optInt("res", 0),
-                    superficie = item.optDouble("sup", 0.0)
+                    lon = item.getDouble("lon")
                 )
             }
             databaseCompleto = tempMap
@@ -53,7 +49,13 @@ object ComuniDatabase {
         }
     }
 
-    data class Result(val nome: String, val prov: String, val reg: String, val lat: Double, val lon: Double)
+    data class Result(
+        val nome: String,
+        val prov: String,
+        val reg: String,
+        val lat: Double,
+        val lon: Double
+    )
 
     fun cercaDati(comune: String, localita: String, provincia: String): Result {
         val p = provincia.uppercase().trim()
@@ -61,7 +63,7 @@ object ComuniDatabase {
         val l = localita.lowercase().trim()
 
         // 1. Priorità: Comune esatto nel DB
-        databaseCompleto[c]?.let { 
+        databaseCompleto[c]?.let {
             return Result(c, it.prov, it.reg, it.lat, it.lon)
         }
 
@@ -81,6 +83,18 @@ object ComuniDatabase {
         }
 
         return Result("vicenza", "VI", "Veneto", 45.5479, 11.5446)
+    }
+
+    fun getRegioni(): List<String> {
+        return databaseCompleto.values.map { it.reg }.distinct().sorted()
+    }
+
+    fun getProvince(regione: String? = null): List<String> {
+        return databaseCompleto.values
+            .filter { regione == null || it.reg == regione }
+            .map { it.prov }
+            .distinct()
+            .sorted()
     }
 
     private fun getCapoluogo(prov: String): String {
