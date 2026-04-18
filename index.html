@@ -1,132 +1,281 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <meta charset="UTF-8">
+    <title>BatMaps 2025 - Versione 17.65</title>
+    <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BatMaps 2025 - v18.20</title>
+
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
+        body { margin: 0; padding: 0; font-family: sans-serif; background: #f4f7f6; }
         #map { height: 100vh; width: 100%; }
-        .version-tag {
-            position: fixed; top: 15px; right: 15px; background: white;
-            padding: 8px 15px; border-radius: 8px; font-weight: bold;
-            z-index: 1100; box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-            border: 2px solid #2c3e50; color: #2c3e50;
+
+        #overlay {
+            position: fixed; top: 15px; right: 15px;
+            background: white; padding: 15px; border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            z-index: 1000;
+            border-left: 5px solid #2980b9;
+            width: 230px;
         }
-        .status-overlay {
-            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-            background: rgba(0,0,0,0.8); color: white; padding: 10px 20px;
-            border-radius: 20px; z-index: 2000; display: flex; align-items: center;
-            font-size: 0.9em;
+
+        .popup-table { font-size: 13px; border-collapse: collapse; width: 100%; margin-top: 5px; }
+        .popup-table td { padding: 5px 0; border-bottom: 1px solid #eee; vertical-align: top; }
+        .label { font-weight: bold; color: #7f8c8d; width: 90px; }
+        .valore { color: #2c3e50; font-weight: 500; }
+        .specie-title { color: #2980b9; font-size: 1.2em; font-weight: bold; display: block; }
+        .date-subtitle { font-size: 0.85em; color: #95a5a6; font-style: italic; margin-bottom: 8px; }
+
+        /* Stili Legenda */
+        .legend-container {
+            position: fixed; bottom: 30px; left: 15px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+            z-index: 1000;
         }
-        .spinner {
-            border: 3px solid #f3f3f3; border-top: 3px solid #e67e22;
-            border-radius: 50%; width: 16px; height: 16px;
-            animation: spin 1s linear infinite; margin-right: 12px;
-        }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .popup-table { width: 100%; border-collapse: collapse; font-size: 0.9em; margin-top: 10px; }
-        .popup-table td { padding: 4px 0; border-bottom: 1px solid #eee; }
-        .label { font-weight: bold; color: #7f8c8d; width: 70px; }
+        .legend-title { font-weight: bold; font-size: 0.9em; margin-bottom: 6px; color: #2c3e50; display: block; }
+        .legend-item { display: flex; align-items: center; margin-bottom: 4px; font-size: 0.85em; color: #34495e; }
+        .dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; margin-right: 10px; }
+        .dot.green { background-color: #27ae60; }
+        .dot.red { background-color: #c0392b; }
+        .dot.yellow { background-color: #f7ff65; border: 1px solid #ccc; }
+        .dot.blue { background-color: #2980b9; }
     </style>
 </head>
+
 <body>
 
-<div class="version-tag">BatMaps 2025 - v18.20</div>
+<div id="overlay">
+    <b style="font-size:1.2em; color: #2c3e50;">BatMaps 2025</b><br>
+    <div id="status" style="color: #7f8c8d; font-size: 0.9em; margin: 5px 0;">Sincronizzazione Excel...</div>
+    <div id="counter" style="font-size: 1.2em; font-weight: bold; color: #27ae60;"></div>
+</div>
 
-<div id="status" class="status-overlay">
-    <div class="spinner"></div>
-    <span id="status-msg">Caricamento dati...</span>
+<div class="legend-container">
+    <span class="legend-title">Legenda</span>
+    <div class="legend-item"><span class="dot green"></span> Liberato / Recuperato dalla madre</div>
+    <div class="legend-item"><span class="dot red"></span> Morto</div>
+    <div class="legend-item"><span class="dot yellow"></span> In degenza</div>
+    <div class="legend-item"><span class="dot blue"></span> Altro</div>
 </div>
 
 <div id="map"></div>
 
 <script>
-    const map = L.map('map').setView([41.9, 12.5], 6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
+const map = L.map('map').setView([45.4, 11.8], 8);
 
-    async function getCoordinates(query) {
-        try {
-            // Aggiunta email per policy Nominatim e rimosso User-Agent manuale (bloccato dai browser)
-            const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&email=marcello.consolo@gmail.com`;
-            const resp = await fetch(url);
-            const data = await resp.json();
-            return (data && data.length > 0) ? { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) } : null;
-        } catch (e) {
-            console.error("Errore geocodifica:", e);
-            return null;
-        }
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+function formatTime(val) {
+    if (!val || val === "-") return "";
+    let s = String(val).trim();
+    let num = parseFloat(s.replace(",", "."));
+    if (!isNaN(num) && num > 0 && num < 1) {
+        let totalSeconds = Math.round(num * 24 * 3600);
+        let hours = Math.floor(totalSeconds / 3600);
+        let minutes = Math.floor((totalSeconds % 3600) / 60);
+        return (hours < 10 ? "0" : "") + hours + ":" + (minutes < 10 ? "0" : "") + minutes;
     }
+    if (s.includes(":")) {
+        let parts = s.split(":");
+        return parts[0].padStart(2, '0') + ":" + parts[1].padStart(2, '0');
+    }
+    return s;
+}
 
-    async function init() {
+const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : "-";
+
+async function init() {
+    try {
+        let dbComuni = {};
         try {
-            const statusMsg = document.getElementById("status-msg");
-            // Caricamento Excel diretto da GitHub
-            const resp = await fetch('https://raw.githubusercontent.com/marcelloconsolo/BatMaps/main/app/src/main/assets/Pipistrelli%202025.xlsx');
-            const arrayBuffer = await resp.arrayBuffer();
-            const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
-            const sheet = workbook.Sheets[workbook.SheetNames[0]];
-            const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+            dbComuni = await (await fetch('web/comuni_italiani.json')).json();
+        } catch {
+            dbComuni = await (await fetch('comuni_italiani.json')).json();
+        }
 
-            let hIdx = -1;
-            for(let i=0; i<30; i++) {
-                if(jsonData[i] && jsonData[i].join("").toLowerCase().includes("specie")) { hIdx = i; break; }
+        let response;
+        try {
+            response = await fetch('web/Pipistrelli 2025.xlsx?v=' + Date.now());
+            if (!response.ok) throw new Error();
+        } catch {
+            response = await fetch('Pipistrelli 2025.xlsx?v=' + Date.now());
+        }
+
+        const data = new Uint8Array(await response.arrayBuffer());
+        const workbook = XLSX.read(data, {type: 'array'});
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, {header: 1});
+
+        let hIdx = 0;
+        for(let i=0; i<rows.length && i<20; i++) {
+            if(rows[i] && rows[i].some(c => {
+                let s = String(c || "").toLowerCase();
+                return s.includes("speci") || s.includes("data");
+            })) { hIdx = i; break; }
+        }
+
+        const header = rows[hIdx].map(h => String(h || "").toLowerCase().trim());
+        const dataRows = rows.slice(hIdx + 1);
+
+        const getCol = (targets) => {
+            for(let t of targets) {
+                let idx = header.findIndex(h => h.includes(t));
+                if(idx !== -1) return idx;
             }
-            if(hIdx === -1) {
-                statusMsg.innerText = "Errore: intestazione non trovata";
-                return;
+            return -1;
+        };
+
+        const c = {
+            specie: getCol(["specie"]),
+            data: getCol(["data"]),
+            ora: getCol(["ora"]),
+            loc: getCol(["localit"]),
+            com: getCol(["comune"]),
+            prov: getCol(["provin"]),
+            stato: getCol(["stato"]),
+            note: getCol(["condizioni", "note"]),
+            lat: getCol(["latitud"]),
+            lon: getCol(["longitud"])
+        };
+
+        const markers = L.markerClusterGroup();
+        let allMarkers = [];
+
+        const sortedComuniKeys = Object.keys(dbComuni).sort((a, b) => b.length - a.length);
+
+        function determinaDati(vComRaw, vLocRaw) {
+            let vComLow = String(vComRaw || "").toLowerCase().trim();
+            if (vComLow && dbComuni[vComLow]) {
+                return { nome: vComLow, ...dbComuni[vComLow] };
             }
 
-            const rows = XLSX.utils.sheet_to_json(sheet, { range: hIdx });
-            const markers = [];
-
-            for (let i = 0; i < rows.length; i++) {
-                const row = rows[i];
-                const loc = String(row["Località"] || "").trim();
-                const com = String(row["Comune"] || "").trim();
-                const specie = String(row["Specie"] || "Pipistrello");
-
-                if (!loc && !com) continue;
-
-                statusMsg.innerText = `Processo ${i+1}/${rows.length}: ${loc || com}`;
-
-                // Tentativo 1: Via + Comune, Tentativo 2: Solo Comune
-                let coords = await getCoordinates(loc ? `${loc}, ${com}` : com);
-                if (!coords && loc) coords = await getCoordinates(com);
-
-                if (coords) {
-                    let color = "blue";
-                    const s = String(row["Stato"] || "").toLowerCase();
-                    if (s.includes("liberato")) color = "green";
-                    else if (s.includes("morto")) color = "red";
-                    else if (s.includes("degenza")) color = "yellow";
-
-                    const icon = new L.Icon({
-                        iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
-                        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-                        iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
-                    });
-
-                    L.marker([coords.lat, coords.lon], { icon }).addTo(map)
-                        .bindPopup(`<b>${specie}</b><br><table class="popup-table"><tr><td class="label">Loc:</td><td>${loc}</td></tr><tr><td class="label">Com:</td><td>${com}</td></tr><tr><td class="label">Stato:</td><td>${row["Stato"] || "-"}</td></tr></table>`);
-                    markers.push([coords.lat, coords.lon]);
+            let vLocLow = String(vLocRaw || "").toLowerCase().trim().replace(/\u00A0/g, ' ');
+            for (let nome of sortedComuniKeys) {
+                if (nome.length > 3 && vLocLow.includes(nome)) {
+                    return { nome: nome, ...dbComuni[nome] };
                 }
-                // Rispetto limite Nominatim
-                await new Promise(r => setTimeout(r, 1200));
             }
-            document.getElementById("status").style.display = "none";
-            if (markers.length > 0) map.fitBounds(markers);
-        } catch (e) {
-            console.error("Errore inizializzazione:", e);
-            document.getElementById("status-msg").innerText = "Errore critico caricamento";
+            return { nome: "vicenza", prov: "VI", reg: "Veneto", lat: 45.5479, lon: 11.5446 };
         }
+
+        dataRows.forEach(row => {
+            if (!row || row.length < 2) return;
+
+            let vSpecie = String(row[c.specie] || "Pipistrello").trim();
+            let vDataRaw = row[c.data];
+
+            let vComRaw = String(row[c.com] || "").trim();
+            let vLocRaw = String(row[c.loc] || "").trim();
+            let vProvOrig = String(row[c.prov] || "").trim().toUpperCase();
+            let vOra = formatTime(row[c.ora]);
+
+            const res = determinaDati(vComRaw, vLocRaw);
+            let vProv = (vProvOrig && vProvOrig !== "-") ? vProvOrig : res.prov;
+
+            // --- ESTRAZIONE E SPOSTAMENTO COMUNE ---
+            let vComDisp = (vComRaw && vComRaw !== "-") ? vComRaw :
+                           (res.nome ? res.nome.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ") : "-");
+
+            let vLocDisp = vLocRaw.replace(/\u00A0/g, ' ');
+
+            const nomiDaRimuovere = new Set();
+            if (vComDisp && vComDisp !== "-") nomiDaRimuovere.add(vComDisp.toLowerCase());
+            if (res.nome) nomiDaRimuovere.add(res.nome.toLowerCase());
+
+            if (vLocDisp.toLowerCase().includes(res.nome.toLowerCase())) {
+                const regex = new RegExp(`[,\\s]*${res.nome.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}[,\\s]*`, 'gi');
+                let pulita = vLocDisp.replace(regex, " ").trim();
+
+                // Se dopo la pulizia rimane qualcosa (es. la via), usiamo la versione pulita.
+                // Se invece non rimane nulla, significa che la località conteneva SOLO il comune:
+                // in questo caso la LASCIAMO (non mettiamo il trattino).
+                if (pulita.length > 0) {
+                    vLocDisp = pulita;
+                }
+            }
+
+            // Pulizia finale
+            vLocDisp = vLocDisp
+                .replace(/^[, \s.-]+/, "")
+                .replace(/[, \s.-]+$/, "")
+                .trim();
+
+            if (!vLocDisp) vLocDisp = "-";
+            else vLocDisp = vLocDisp.charAt(0).toUpperCase() + vLocDisp.slice(1);
+            // ---------------------------------------
+
+            let vData = "-";
+            if (vDataRaw) {
+                if (typeof vDataRaw === 'number') vData = new Date((vDataRaw - 25569) * 86400 * 1000).toLocaleDateString('it-IT');
+                else vData = String(vDataRaw).split("T")[0];
+            }
+
+            let lat = parseFloat(String(row[c.lat] || 0).replace(",", "."));
+            let lon = parseFloat(String(row[c.lon] || 0).replace(",", "."));
+            if (!lat || isNaN(lat)) {
+                lat = res.lat;
+                lon = res.lon;
+            }
+
+            // ✔ COLORI MARKER RIPRISTINATI
+            let vStato = String(row[c.stato] || "").toLowerCase();
+            let markerColor = "blue";
+            if (vStato.includes("liberato") || vStato.includes("recuperato")) markerColor = "green";
+            else if (vStato.includes("morto")) markerColor = "red";
+            else if (vStato.includes("degenza")) markerColor = "yellow";
+
+            const customIcon = new L.Icon({
+                iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${markerColor}.png`,
+                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                shadowSize: [41, 41]
+            });
+
+            const popup = `
+                <div style="min-width:210px">
+                    <span class="specie-title">${vSpecie}</span>
+                    <div class="date-subtitle">Segnalazione del ${vData} ${vOra ? 'ore '+vOra : ''}</div>
+                    <table class="popup-table">
+                        <tr><td class="label">Località:</td><td class="valore">${vLocDisp}</td></tr>
+                        <tr><td class="label">Comune:</td><td class="valore">${vComDisp}</td></tr>
+                        <tr><td class="label">Provincia:</td><td class="valore">${vProv}</td></tr>
+                        <tr><td class="label">Stato:</td><td class="valore">${row[c.stato] || "-"}</td></tr>
+                        <tr><td class="label">Condizioni:</td><td class="valore">${row[c.note] || "-"}</td></tr>
+                    </table>
+                </div>`;
+
+            const marker = L.marker([lat, lon], {icon: customIcon}).bindPopup(popup);
+
+            allMarkers.push({ marker, lat, lon });
+            markers.addLayer(marker);
+        });
+
+        map.addLayer(markers);
+        if (allMarkers.length > 0) map.fitBounds(allMarkers.map(m => [m.lat, m.lon]));
+
+        document.getElementById('status').innerText = "✅ Sincronizzato";
+        document.getElementById('counter').innerText = "Totale: " + allMarkers.length;
+
+    } catch (e) {
+        console.error(e);
+        document.getElementById('status').innerText = "❌ Errore";
     }
-    init();
+}
+
+init();
 </script>
+
 </body>
 </html>
