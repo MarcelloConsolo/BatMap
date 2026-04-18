@@ -374,23 +374,25 @@ fun leggiExcel(context: Context): List<Pair<Segnalazione, GeoPoint>> {
             }
 
             // 2. PULIZIA LOCALITÀ: Rimuoviamo il nome del comune dalla stringa della località
-            var localitaDisplay = localitaRaw
+            var localitaDisplay = localitaRaw.replace('\u00A0', ' ') // Rimuove spazi Excel invisibili
             val nomiDaRimuovere = mutableSetOf<String>()
             if (comuneDisplay.isNotBlank() && comuneDisplay != "-") nomiDaRimuovere.add(comuneDisplay)
             if (res.nome.isNotBlank()) nomiDaRimuovere.add(res.nome)
 
             for (nome in nomiDaRimuovere) {
-                if (nome.length < 3) continue
-                // Rimuove il nome del comune in modo aggressivo (case insensitive)
-                val escaped = Regex.escape(nome)
-                localitaDisplay = localitaDisplay.replace(Regex(escaped, RegexOption.IGNORE_CASE), "")
+                val paroleComune = nome.split(Regex("[,\\s-]+")).filter { it.length > 2 }
+                if (paroleComune.isEmpty()) continue
+                
+                // Crea una regex che cerca le parole del comune separate da qualsiasi punteggiatura/spazio
+                val pattern = paroleComune.joinToString("[\\s,.-]+") { Regex.escape(it) }
+                localitaDisplay = localitaDisplay.replace(Regex(pattern, RegexOption.IGNORE_CASE), "")
             }
 
-            // Pulizia finale di eventuali virgole o spazi rimasti (es: ", , " -> " ")
+            // Pulizia finale: rimuove virgole doppie, spazi extra e punteggiatura residua
             localitaDisplay = localitaDisplay
-                .replace(Regex("[,\\s]+"), " ") // Converte sequenze di virgole/spazi in un singolo spazio
-                .replace(Regex("^[,\\s]+"), "") // Pulisce l'inizio
-                .replace(Regex("[,\\s]+$"), "") // Pulisce la fine
+                .replace(Regex("[,\\s]+"), " ") // Trasforma tutto in spazi singoli
+                .replace(Regex("^[,\\s.-]+"), "") // Rimuove all'inizio
+                .replace(Regex("[,\\s.-]+$"), "") // Rimuove alla fine
                 .trim()
 
             if (localitaDisplay.isBlank()) localitaDisplay = "-"

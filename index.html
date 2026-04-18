@@ -173,22 +173,26 @@ async function init() {
             let vComDisp = (vComRaw && vComRaw !== "-") ? vComRaw : res.nome;
 
             // --- PULIZIA LOCALITÀ AGGRESSIVA ---
-            let vLocDisp = vLocRaw && vLocRaw !== "" ? vLocRaw : "";
+            let vLocDisp = vLocRaw.replace(/\u00A0/g, ' '); // Rimuove spazi Excel invisibili
             const nomiDaRimuovere = new Set();
             if (vComDisp && vComDisp !== "-") nomiDaRimuovere.add(vComDisp.toLowerCase());
             if (res.nome) nomiDaRimuovere.add(res.nome.toLowerCase());
 
             nomiDaRimuovere.forEach(nome => {
-                if (nome.length < 3) return;
-                const regex = new RegExp(nome.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi');
+                const parole = nome.split(/[\s,.-]+/).filter(p => p.length > 2);
+                if (parole.length === 0) return;
+
+                // Crea una regex che cerca le parole del comune separate da qualsiasi cosa
+                const pattern = parole.map(p => p.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')).join("[\\s,.-]+");
+                const regex = new RegExp(pattern, 'gi');
                 vLocDisp = vLocDisp.replace(regex, "");
             });
 
             // Pulizia finale punteggiatura e spazi
             vLocDisp = vLocDisp
-                .replace(/[, \s]+/g, " ")
-                .replace(/^[, \s]+/, "")
-                .replace(/[, \s]+$/, "")
+                .replace(/[, \s.-]+/g, " ")
+                .replace(/^[, \s.-]+/, "")
+                .replace(/[, \s.-]+$/, "")
                 .trim();
 
             if (!vLocDisp || vLocDisp.toLowerCase() === vComDisp.toLowerCase()) {
