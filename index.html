@@ -8,8 +8,8 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
-        #map { height: 100vh; width: 100%; }
+        body, html { margin: 0; padding: 0; height: 100%; font-family: sans-serif; overflow: hidden; }
+        #map { height: 100vh; width: 100%; z-index: 1; }
         .version-tag {
             position: fixed; top: 15px; right: 15px; background: white;
             padding: 8px 15px; border-radius: 8px; font-weight: bold;
@@ -20,7 +20,7 @@
             position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
             background: rgba(0,0,0,0.8); color: white; padding: 10px 20px;
             border-radius: 20px; z-index: 2000; display: flex; align-items: center;
-            font-size: 0.9em;
+            font-size: 0.9em; pointer-events: none;
         }
         .spinner {
             border: 3px solid #f3f3f3; border-top: 3px solid #e67e22;
@@ -39,7 +39,7 @@
 
 <div id="status" class="status-overlay">
     <div class="spinner"></div>
-    <span id="status-msg">Caricamento anni: 2022-2025...</span>
+    <span id="status-msg">Inizializzazione mappa...</span>
 </div>
 
 <div id="map"></div>
@@ -50,66 +50,83 @@
         attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    async function getCoordinates(query, fallbackQuery) {
+    const localDB = {
+        "mirano": {lat: 45.4925, lon: 12.1128, prov: "VE"},
+        "venezia": {lat: 45.4408, lon: 12.3155, prov: "VE"},
+        "padova": {lat: 45.4064, lon: 11.8768, prov: "PD"},
+        "verona": {lat: 45.4384, lon: 10.9916, prov: "VR"},
+        "vicenza": {lat: 45.5479, lon: 11.5446, prov: "VI"},
+        "treviso": {lat: 45.6669, lon: 12.2431, prov: "TV"},
+        "belluno": {lat: 46.1425, lon: 12.2167, prov: "BL"},
+        "rovigo": {lat: 45.0711, lon: 11.7907, prov: "RO"},
+        "mogliano veneto": {lat: 45.5604, lon: 12.2373, prov: "TV"},
+        "mestre": {lat: 45.4908, lon: 12.2389, prov: "VE"},
+        "pordenone": {lat: 45.9566, lon: 12.6605, prov: "PN"}
+    };
+
+    async function getCoordinates(loc, com, prov) {
+        const comKey = com.toLowerCase().trim();
+        if (!loc && localDB[comKey]) return localDB[comKey];
+
         try {
-            // Rafforzamento query per evitare Milano/Pordenone
-            const finalQuery = `${query}, Veneto, Italia`;
-            const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(finalQuery)}&format=json&limit=1&email=marcello.consolo@gmail.com`;
+            const q = `${loc ? loc + ", " : ""}${com}, ${prov || ""}, Veneto, Italia`;
+            const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&email=marcello.consolo@gmail.com`;
             const resp = await fetch(url);
             const data = await resp.json();
 
             if (data && data.length > 0) return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
-
-            if (fallbackQuery) {
-                const url2 = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(fallbackQuery + ", Veneto, Italia")}&format=json&limit=1&email=marcello.consolo@gmail.com`;
-                const resp2 = await fetch(url2);
-                const data2 = await resp2.json();
-                if (data2 && data2.length > 0) return { lat: parseFloat(data2[0].lat), lon: parseFloat(data2[0].lon) };
-            }
-            return null;
-        } catch (e) { return null; }
+            return localDB[comKey] || null;
+        } catch (e) { return localDB[comKey] || null; }
     }
 
     async function processYear(year) {
         const statusMsg = document.getElementById("status-msg");
         try {
+            statusMsg.innerText = `Caricamento file ${year}...`;
             const fileName = `Pipistrelli ${year}.xlsx`;
-            const resp = await fetch(`https://raw.githubusercontent.com/marcelloconsolo/BatMaps/main/app/src/main/assets/${fileName}?v=${Date.now()}`);
+            const url = `https://raw.githubusercontent.com/marcelloconsolo/BatMaps/main/app/src/main/assets/${fileName}?v=${Date.now()}`;
+            const resp = await fetch(url);
             if (!resp.ok) return;
 
-            const workbook = XLSX.read(new Uint8Array(await resp.arrayBuffer()), { type: 'array' });
+            const data = await resp.arrayBuffer();
+            const workbook = XLSX.read(new Uint8Array(data), { type: 'array' });
             const sheet = workbook.Sheets[workbook.SheetNames[0]];
-            const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
             let hIdx = -1;
-            for(let i=0; i<30; i++) {
-                if(jsonData[i] && jsonData[i].join("").toLowerCase().includes("specie")) { hIdx = i; break; }
+            for(let i=0; i<Math.min(rows.length, 30); i++) {
+                const rowStr = rows[i].join("").toLowerCase();
+                if(rowStr.includes("specie") || rowStr.includes("data")) { hIdx = i; break; }
             }
             if(hIdx === -1) return;
 
-            const rows = XLSX.utils.sheet_to_json(sheet, { range: hIdx });
-            const markers = [];
+            const headers = rows[hIdx].map(h => String(h || "").toLowerCase());
+            const colMap = {
+                specie: headers.findIndex(h => h.includes("specie")),
+                data: headers.findIndex(h => h.includes("data")),
+                loc: headers.findIndex(h => h.includes("localit") || h.includes("indirizzo")),
+                comune: headers.findIndex(h => h.includes("comune")),
+                prov: headers.findIndex(h => h.includes("provin") || h.includes("prov.")),
+                stato: headers.findIndex(h => h.includes("stato") || h.includes("condizioni")),
+                note: headers.findIndex(h => h.includes("note"))
+            };
 
-            for (let i = 0; i < rows.length; i++) {
-                const row = rows[i];
-                const loc = String(row["Località"] || "").trim();
-                const com = String(row["Comune"] || "").trim();
-                const prov = String(row["Provincia"] || "").trim();
-                if (!loc && !com) continue;
+            for (let i = hIdx + 1; i < rows.length; i++) {
+                const r = rows[i];
+                const com = String(r[colMap.comune] || "").trim();
+                const loc = String(r[colMap.loc] || "").trim();
+                const prov = String(r[colMap.prov] || "").trim();
+                if (!com) continue;
 
-                statusMsg.innerText = `Processo [${year}] ${i+1}/${rows.length}: ${loc || com}`;
+                statusMsg.innerText = `[${year}] Elaborazione: ${com}`;
 
-                let q = loc && loc.toLowerCase() !== com.toLowerCase() ? `${loc}, ${com}` : com;
-                if (prov) q += `, ${prov}`;
-
-                let coords = await getCoordinates(q, `${com}, ${prov}`);
-
+                const coords = await getCoordinates(loc, com, prov);
                 if (coords) {
                     let color = "blue";
-                    const s = String(row["Stato"] || "").toLowerCase();
-                    if (s.includes("liberato")) color = "green";
-                    else if (s.includes("morto")) color = "red";
-                    else if (s.includes("degenza")) color = "yellow";
+                    const stato = String(r[colMap.stato] || "").toLowerCase();
+                    if (stato.includes("liberato")) color = "green";
+                    else if (stato.includes("morto")) color = "red";
+                    else if (stato.includes("degenza")) color = "yellow";
 
                     const icon = new L.Icon({
                         iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
@@ -118,12 +135,11 @@
                     });
 
                     L.marker([coords.lat, coords.lon], { icon }).addTo(map)
-                        .bindPopup(`<b>${row["Specie"] || "Pipistrello"} (${year})</b><br><table class="popup-table"><tr><td class="label">Loc:</td><td>${loc}</td></tr><tr><td class="label">Com:</td><td>${com} (${prov})</td></tr><tr><td class="label">Stato:</td><td>${row["Stato"] || "-"}</td></tr></table>`);
-                    markers.push([coords.lat, coords.lon]);
+                        .bindPopup(`<b>${r[colMap.specie] || "Pipistrello"} (${year})</b><br><table class="popup-table"><tr><td class="label">Loc:</td><td>${loc || "-"}</td></tr><tr><td class="label">Com:</td><td>${com} (${prov})</td></tr><tr><td class="label">Stato:</td><td>${r[colMap.stato] || "-"}</td></tr></table>`);
                 }
-                await new Promise(r => setTimeout(r, 1200));
+                if (loc || !localDB[com.toLowerCase()]) await new Promise(r => setTimeout(r, 1200));
             }
-        } catch (e) { console.error(e); }
+        } catch (e) { console.error("Errore anno " + year, e); }
     }
 
     async function init() {

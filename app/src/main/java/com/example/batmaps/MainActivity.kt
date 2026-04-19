@@ -104,22 +104,10 @@ fun BatMapScreen() {
 
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
         Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+            // 1. LA MAPPA (Deve essere il primo elemento per stare sotto)
             OSMMapView(tutteLeSegnalazioni.toList())
 
-            if (isLoading) {
-                Surface(
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 80.dp).padding(horizontal = 24.dp),
-                    color = Color.Black.copy(alpha = 0.8f),
-                    shape = MaterialTheme.shapes.medium
-                ) {
-                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Text(statusMessage, color = Color.White, style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            }
-
+            // 2. FINESTRA VERSIONE (In alto a destra)
             Surface(
                 modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
                 color = Color.White.copy(alpha = 0.9f),
@@ -134,6 +122,21 @@ fun BatMapScreen() {
                     color = Color(0xFF2c3e50),
                     fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                 )
+            }
+
+            // 3. STATO CARICAMENTO (In basso)
+            if (isLoading) {
+                Surface(
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 80.dp).padding(horizontal = 24.dp),
+                    color = Color.Black.copy(alpha = 0.8f),
+                    shape = MaterialTheme.shapes.medium
+                ) {
+                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text(statusMessage, color = Color.White, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
             }
         }
     }
@@ -209,11 +212,13 @@ suspend fun leggiExcelIncrementale(
 
         for (i in (headerIdx + 1)..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
-            val locRaw = formatter.formatCellValue(row.getCell(colMap["loc"] ?: -1)).trim()
-            val comRaw = formatter.formatCellValue(row.getCell(colMap["comune"] ?: -1)).trim()
-            val provRaw = formatter.formatCellValue(row.getCell(colMap["prov"] ?: -1)).trim()
             
-            if (locRaw.isBlank() && comRaw.isBlank()) continue
+            // Lettura sicura delle celle per evitare crash con indici -1
+            val locRaw = colMap["loc"]?.let { formatter.formatCellValue(row.getCell(it)) }?.trim() ?: ""
+            val comRaw = colMap["comune"]?.let { formatter.formatCellValue(row.getCell(it)) }?.trim() ?: ""
+            val provRaw = colMap["prov"]?.let { formatter.formatCellValue(row.getCell(it)) }?.trim() ?: ""
+            
+            if (comRaw.isBlank()) continue
 
             // Query super precisa per evitare errori (Mirano -> Milano)
             val queryParts = mutableListOf<String>()
@@ -226,26 +231,41 @@ suspend fun leggiExcelIncrementale(
             val query = queryParts.joinToString(", ")
             withContext(Dispatchers.Main) { onProgress("Geocodifica: $comRaw...") }
 
-            var coords = getCoordinatesFromNominatim(query)
-            if (coords == null && locRaw.isNotBlank()) {
-                coords = getCoordinatesFromNominatim("$comRaw, $provRaw, Veneto, Italia")
+            // 1. Tentativo con Database Locale (veloce e sicuro per i comuni)
+            val localResult = ComuniDatabase.cercaDati(comRaw, locRaw, provRaw)
+            var coords: Pair<Double, Double>?
+
+            // Se non c'è una via specifica, usiamo i dati certi del DB locale
+            if (locRaw.isBlank() || locRaw.lowercase() == comRaw.lowercase()) {
+                coords = Pair(localResult.lat, localResult.lon)
+            } else {
+                // 2. Tentativo con Nominatim per indirizzo specifico
+                val nominatimCoords = getCoordinatesFromNominatim(query)
+                
+                if (nominatimCoords == null) {
+                    // 3. Fallback: se la via fallisce, usiamo il centro del comune dal DB
+                    coords = Pair(localResult.lat, localResult.lon)
+                } else {
+                    coords = nominatimCoords
+                    // Rispetta la policy di Nominatim solo se abbiamo fatto una richiesta web
+                    delay(1200)
+                }
             }
             
             if (coords != null) {
-                val dataStr = formatter.formatCellValue(row.getCell(colMap["data"] ?: -1))
+                val dataStr = colMap["data"]?.let { formatter.formatCellValue(row.getCell(it)) } ?: ""
+                val specieStr = colMap["specie"]?.let { formatter.formatCellValue(row.getCell(it)) } ?: "Pipistrello"
+                val statoStr = colMap["stato"]?.let { formatter.formatCellValue(row.getCell(it)) } ?: ""
+                val noteStr = colMap["note"]?.let { formatter.formatCellValue(row.getCell(it)) } ?: ""
+
                 val point = Pair(
                     Segnalazione(
-                        dataStr,
-                        formatter.formatCellValue(row.getCell(colMap["specie"] ?: -1)),
-                        locRaw, comRaw, provRaw,
-                        formatter.formatCellValue(row.getCell(colMap["stato"] ?: -1)),
-                        formatter.formatCellValue(row.getCell(colMap["note"] ?: -1)),
+                        dataStr, specieStr, locRaw, comRaw, provRaw, statoStr, noteStr,
                         coords.first, coords.second, anno
                     ),
                     GeoPoint(coords.first, coords.second)
                 )
                 withContext(Dispatchers.Main) { onNewPoint(point) }
-                delay(1200) 
             }
         }
         workbook.close()
