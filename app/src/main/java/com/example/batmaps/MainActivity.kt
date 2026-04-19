@@ -58,7 +58,7 @@ suspend fun getCoordinatesFromNominatim(queryText: String): Pair<Double, Double>
     if (queryText.isBlank()) return@withContext null
     return@withContext try {
         val query = URLEncoder.encode(queryText, "UTF-8")
-        val url = URL("https://nominatim.openstreetmap.org/search?q=$query&format=json&limit=1&email=marcello.consolo@gmail.com")
+        val url = URL("https://nominatim.openstreetmap.org/search?q=$query&format=json&limit=1&countrycodes=it&email=marcello.consolo@gmail.com")
         val conn = url.openConnection() as HttpURLConnection
         conn.setRequestProperty("User-Agent", "BatMapsApp/18.40")
         conn.connectTimeout = 5000
@@ -251,10 +251,16 @@ suspend fun leggiExcelIncrementale(
             if (name.contains("specie")) colMap["specie"] = j
             if (name.contains("data")) colMap["data"] = j
             if (name.contains("localit") || name.contains("indirizzo")) colMap["loc"] = j
-            if (name.contains("comune")) colMap["comune"] = j
-            if (name.contains("stato")) colMap["stato"] = j
-            if (name.contains("provin") || name.contains("prov.")) colMap["prov"] = j
-            if (name.contains("note") || name.contains("condizioni")) colMap["note"] = j
+            if (name.contains("comune") || name == "citta") colMap["comune"] = j
+            if (name == "stato" || name == "condizioni") {
+                // Se la colonna si chiama esattamente "stato", la mettiamo in stato.
+                // Se si chiama "condizioni", la mettiamo in note.
+                if (name == "stato") colMap["stato"] = j else colMap["note"] = j
+            } else {
+                if (name.contains("stato")) colMap["stato"] = j
+                if (name.contains("condizioni") || name.contains("note")) colMap["note"] = j
+            }
+            if (name == "pr" || name.contains("provin") || name.contains("prov.")) colMap["prov"] = j
             if (name.contains("lat")) colMap["lat"] = j
             if (name.contains("lon") || name.contains("lng")) colMap["lon"] = j
         }
@@ -270,7 +276,7 @@ suspend fun leggiExcelIncrementale(
             val comRaw = colMap["comune"]?.let { formatter.formatCellValue(row.getCell(it)) }?.trim() ?: ""
             val provRaw = colMap["prov"]?.let { formatter.formatCellValue(row.getCell(it)) }?.trim() ?: ""
             
-            if (comRaw.isBlank()) continue
+            if (comRaw.isBlank() && locRaw.isBlank()) continue
 
             // 1. TENTATIVO COORDINATE GIA' PRESENTI NEL FILE (Istantaneo)
             var coords: Pair<Double, Double>? = null
