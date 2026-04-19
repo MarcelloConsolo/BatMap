@@ -333,23 +333,27 @@ suspend fun leggiExcelIncrementale(
                     val nominatimCoords = getCoordinatesFromNominatim(query)
                     
                     if (nominatimCoords == null) {
-                        // 4. Fallback: se la via fallisce, usiamo il centro del comune dal DB
+                        // 4. Fallback: se la via fallisce (Timeout o altro), usiamo il centro del comune dal DB
                         coords = Pair(localResult.lat, localResult.lon)
                     } else {
                         coords = nominatimCoords
-                        // Rispetta la policy di Nominatim solo se abbiamo fatto una richiesta web
-                        delay(1200)
+                        // Rispetta la policy di Nominatim: 1 secondo di attesa reale
+                        delay(1500)
                     }
                 }
             }
             
             val finalCoords = coords
             if (finalCoords != null) {
+                // RICAVO LA PROVINCIA DAL COMUNE (Sempre, come richiesto)
+                // Cerchiamo nel DB locale usando il comune dell'Excel
+                val localResult = ComuniDatabase.cercaDati(comRaw, locRaw, provRaw)
+                val finalProv = if (localResult.prov.isNotBlank()) localResult.prov else provRaw
+                
                 val dataStr = colMap["data"]?.let { idx ->
                     val cell = row.getCell(idx)
                     if (cell != null) {
                         if (cell.cellType == CellType.NUMERIC) {
-                            // Fix per date che appaiono come numeri (es. 45143)
                             if (DateUtil.isCellDateFormatted(cell) || cell.numericCellValue > 30000) {
                                 try {
                                     java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.ITALY).format(cell.dateCellValue)
@@ -360,11 +364,6 @@ suspend fun leggiExcelIncrementale(
                 } ?: ""
                 
                 val specieStr = colMap["specie"]?.let { formatter.formatCellValue(row.getCell(it)) } ?: "Pipistrello"
-                
-                // PROVINCIA DAL COMUNE (Sempre, come richiesto)
-                val localResult = ComuniDatabase.cercaDati(comRaw, locRaw, provRaw)
-                val finalProv = localResult.prov
-                
                 val statoStr = colMap["stato"]?.let { formatter.formatCellValue(row.getCell(it)) } ?: ""
                 val noteStr = colMap["note"]?.let { formatter.formatCellValue(row.getCell(it)) } ?: ""
 

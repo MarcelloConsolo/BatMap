@@ -62,16 +62,20 @@
 
     let totalPoints = 0;
 
-    // Database sintetico Comuni -> Provincia per il Web
+    // Database esteso delle province per il Web (fallback automatico)
     const provDB = {
         "mirano": "VE", "mogliano veneto": "TV", "vicenza": "VI", "padova": "PD", "venezia": "VE",
         "treviso": "TV", "verona": "VR", "belluno": "BL", "rovigo": "RO", "milano": "MI",
         "mira": "VE", "spinea": "VE", "martellago": "VE", "scorzè": "VE", "salzano": "VE",
-        "noale": "VE", "santa maria di sala": "VE", "pianiga": "VE", "dolo": "VE", "fiesso d'artico": "VE"
+        "noale": "VE", "santa maria di sala": "VE", "pianiga": "VE", "dolo": "VE", "fiesso d'artico": "VE",
+        "camponogara": "VE", "fossò": "VE", "vigonovo": "VE", "stra": "VE", "noventa padovana": "PD",
+        "vigodarzere": "PD", "cadoneghe": "PD", "limena": "PD", "rubano": "PD", "selvazzano dentro": "PD",
+        "albignasego": "PD", "ponte san nicolò": "PD", "legnaro": "PD", "saonara": "PD"
     };
 
     function excelDateToJS(serial) {
-        if (typeof serial !== 'number') return serial;
+        if (serial === null || serial === undefined || serial === "") return "-";
+        if (typeof serial !== 'number') return String(serial);
         const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
         return date.toLocaleDateString('it-IT');
     }
@@ -79,7 +83,8 @@
     function getProvincia(comune) {
         const c = String(comune || "").toLowerCase().trim();
         if (provDB[c]) return provDB[c];
-        // Fallback: se non lo conosco, metto un placeholder o cerco di indovinare dal nome
+        const province = ["VI","VE","PD","TV","VR","RO","BL","MI","MB","BG","BS","TO","GE","RM","NA"];
+        if (province.includes(c.toUpperCase())) return c.toUpperCase();
         return "";
     }
 
