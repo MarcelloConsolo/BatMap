@@ -248,19 +248,23 @@ suspend fun leggiExcelIncrementale(
         for (j in 0 until (headerRow?.lastCellNum?.toInt() ?: 0)) {
             val cell = headerRow?.getCell(j) ?: continue
             val name = formatter.formatCellValue(cell).lowercase().trim()
+            
             if (name.contains("specie")) colMap["specie"] = j
             if (name.contains("data")) colMap["data"] = j
-            if (name.contains("localit") || name.contains("indirizzo")) colMap["loc"] = j
-            if (name.contains("comune") || name == "citta") colMap["comune"] = j
-            if (name == "stato" || name == "condizioni") {
-                // Se la colonna si chiama esattamente "stato", la mettiamo in stato.
-                // Se si chiama "condizioni", la mettiamo in note.
-                if (name == "stato") colMap["stato"] = j else colMap["note"] = j
+            if (name.contains("localit") || name.contains("indirizzo") || name.contains("via")) colMap["loc"] = j
+            if (name.contains("comune") || name.contains("citt") || name.contains("luogo")) colMap["comune"] = j
+            if (name.contains("provin") || name.contains("prov.") || name == "pr") colMap["prov"] = j
+            
+            // Logica esclusiva per Stato e Condizioni
+            if (name == "stato") {
+                colMap["stato"] = j
+            } else if (name == "condizioni" || name == "note") {
+                colMap["note"] = j
             } else {
-                if (name.contains("stato")) colMap["stato"] = j
-                if (name.contains("condizioni") || name.contains("note")) colMap["note"] = j
+                if (name.contains("stato") && colMap["stato"] == null) colMap["stato"] = j
+                if ((name.contains("condizioni") || name.contains("note")) && colMap["note"] == null) colMap["note"] = j
             }
-            if (name == "pr" || name.contains("provin") || name.contains("prov.")) colMap["prov"] = j
+
             if (name.contains("lat")) colMap["lat"] = j
             if (name.contains("lon") || name.contains("lng")) colMap["lon"] = j
         }
@@ -271,11 +275,11 @@ suspend fun leggiExcelIncrementale(
         for (i in (headerIdx + 1)..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
             
-            // Lettura sicura delle celle per evitare crash con indici -1
             val locRaw = colMap["loc"]?.let { formatter.formatCellValue(row.getCell(it)) }?.trim() ?: ""
             val comRaw = colMap["comune"]?.let { formatter.formatCellValue(row.getCell(it)) }?.trim() ?: ""
             val provRaw = colMap["prov"]?.let { formatter.formatCellValue(row.getCell(it)) }?.trim() ?: ""
             
+            // Se non abbiamo né comune né località, saltiamo
             if (comRaw.isBlank() && locRaw.isBlank()) continue
 
             // 1. TENTATIVO COORDINATE GIA' PRESENTI NEL FILE (Istantaneo)
