@@ -196,7 +196,9 @@ fun OSMMapView(punti: List<Pair<Segnalazione, GeoPoint>>) {
         punti.forEach { (info, coordinata) ->
             val marker = Marker(mapView)
             marker.position = coordinata
-            marker.title = "${info.specie} (${info.anno})"
+            // Titolo con Specie e Provincia subito sotto (nel snippet)
+            marker.title = info.specie
+            
             val color = when {
                 info.stato.lowercase().contains("liberato") -> android.graphics.Color.GREEN
                 info.stato.lowercase().contains("morto") -> android.graphics.Color.RED
@@ -204,7 +206,15 @@ fun OSMMapView(punti: List<Pair<Segnalazione, GeoPoint>>) {
                 else -> android.graphics.Color.BLUE
             }
             marker.icon.mutate().setTint(color)
-            marker.snippet = "Località: ${info.localita}\nComune: ${info.comune}\nProvincia: ${info.prov}\nStato: ${info.stato}\nCondizioni: ${info.note}"
+            
+            // Layout Popup: Provincia sotto la specie, poi i dettagli
+            marker.snippet = "Provincia: ${info.prov}\n" +
+                           "Data: ${info.data}\n" +
+                           "Comune: ${info.comune}\n" +
+                           "Località: ${info.localita}\n" +
+                           "Stato: ${info.stato}\n" +
+                           "Condizioni: ${info.note}"
+            
             mapView.overlays.add(marker)
         }
         mapView.invalidate()
@@ -253,7 +263,7 @@ suspend fun leggiExcelIncrementale(
             if (name.contains("data")) colMap["data"] = j
             if (name.contains("localit") || name.contains("indirizzo") || name.contains("via")) colMap["loc"] = j
             if (name.contains("comune") || name.contains("citt") || name.contains("luogo")) colMap["comune"] = j
-            if (name.contains("provin") || name.contains("prov.") || name == "pr") colMap["prov"] = j
+            if (name.contains("prov") || name == "pr") colMap["prov"] = j
             
             // Logica esclusiva per Stato e Condizioni
             if (name == "stato") {
@@ -326,7 +336,14 @@ suspend fun leggiExcelIncrementale(
             
             val finalCoords = coords
             if (finalCoords != null) {
-                val dataStr = colMap["data"]?.let { formatter.formatCellValue(row.getCell(it)) } ?: ""
+                val dataStr = colMap["data"]?.let { idx ->
+                    val cell = row.getCell(idx)
+                    if (cell != null && cell.cellType == CellType.NUMERIC && DateUtil.isCellDateFormatted(cell)) {
+                        java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.ITALY).format(cell.dateCellValue)
+                    } else {
+                        formatter.formatCellValue(cell)
+                    }
+                } ?: ""
                 val specieStr = colMap["specie"]?.let { formatter.formatCellValue(row.getCell(it)) } ?: "Pipistrello"
                 val statoStr = colMap["stato"]?.let { formatter.formatCellValue(row.getCell(it)) } ?: ""
                 val noteStr = colMap["note"]?.let { formatter.formatCellValue(row.getCell(it)) } ?: ""
