@@ -6,7 +6,6 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -38,16 +37,18 @@ data class Segnalazione(
     val specie: String,
     val localita: String,
     val comune: String,
+    val prov: String,
     val stato: String,
     val note: String,
     val latitude: Double,
-    val longitude: Double
+    val longitude: Double,
+    val anno: Int
 )
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Configuration.getInstance().userAgentValue = "BatMapsApp/18.20"
+        Configuration.getInstance().userAgentValue = "BatMapsApp/18.40"
         enableEdgeToEdge()
         setContent { BatMapsTheme { BatMapScreen() } }
     }
@@ -59,7 +60,7 @@ suspend fun getCoordinatesFromNominatim(queryText: String): Pair<Double, Double>
         val query = URLEncoder.encode(queryText, "UTF-8")
         val url = URL("https://nominatim.openstreetmap.org/search?q=$query&format=json&limit=1&email=marcello.consolo@gmail.com")
         val conn = url.openConnection() as HttpURLConnection
-        conn.setRequestProperty("User-Agent", "BatMapsApp/18.20")
+        conn.setRequestProperty("User-Agent", "BatMapsApp/18.40")
         conn.connectTimeout = 5000
         
         val response = conn.inputStream.bufferedReader().use { it.readText() }
@@ -83,30 +84,38 @@ fun BatMapScreen() {
     
     LaunchedEffect(Unit) {
         ComuniDatabase.initialize(context)
-        leggiExcelIncrementale(context, 
-            onProgress = { statusMessage = it },
-            onNewPoint = { tutteLeSegnalazioni.add(it) },
-            onComplete = { isLoading = false }
-        )
+        val years = listOf(2022, 2023, 2024, 2025)
+        
+        for (year in years) {
+            val fileName = "Pipistrelli $year.xlsx"
+            statusMessage = "Caricamento $fileName..."
+            try {
+                leggiExcelIncrementale(context, fileName, year,
+                    onProgress = { msg -> statusMessage = "[$year] $msg" },
+                    onNewPoint = { tutteLeSegnalazioni.add(it) }
+                )
+            } catch (e: Exception) {
+                Log.e("BatMaps", "Errore file $fileName: ${e.message}")
+            }
+        }
+        isLoading = false
+        statusMessage = "Caricamento completato (${tutteLeSegnalazioni.size} punti)"
     }
 
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
         Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
             OSMMapView(tutteLeSegnalazioni.toList())
 
-            if (isLoading || tutteLeSegnalazioni.isEmpty()) {
+            if (isLoading) {
                 Surface(
-                    modifier = Modifier.align(Alignment.Center).padding(24.dp).fillMaxWidth(0.8f),
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 80.dp).padding(horizontal = 24.dp),
                     color = Color.Black.copy(alpha = 0.8f),
                     shape = MaterialTheme.shapes.medium
                 ) {
-                    Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(color = Color.White)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(statusMessage, color = Color.White, style = MaterialTheme.typography.bodyLarge, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                        if (tutteLeSegnalazioni.isNotEmpty()) {
-                            Text("Trovati: ${tutteLeSegnalazioni.size}", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
-                        }
+                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text(statusMessage, color = Color.White, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             }
@@ -119,7 +128,7 @@ fun BatMapScreen() {
                 border = androidx.compose.foundation.BorderStroke(2.dp, Color(0xFF2c3e50))
             ) {
                 Text(
-                    text = "BatMaps 2025 - v18.20",
+                    text = "BatMaps 2025 - v18.40",
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                     style = MaterialTheme.typography.titleSmall,
                     color = Color(0xFF2c3e50),
@@ -137,8 +146,8 @@ fun OSMMapView(punti: List<Pair<Segnalazione, GeoPoint>>) {
         MapView(context).apply {
             setTileSource(TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
-            controller.setZoom(6.0)
-            controller.setCenter(GeoPoint(41.9, 12.5))
+            controller.setZoom(7.0)
+            controller.setCenter(GeoPoint(45.4, 11.8))
         }
     }
 
@@ -147,7 +156,7 @@ fun OSMMapView(punti: List<Pair<Segnalazione, GeoPoint>>) {
         punti.forEach { (info, coordinata) ->
             val marker = Marker(mapView)
             marker.position = coordinata
-            marker.title = info.specie
+            marker.title = "${info.specie} (${info.anno})"
             val color = when {
                 info.stato.lowercase().contains("liberato") -> android.graphics.Color.GREEN
                 info.stato.lowercase().contains("morto") -> android.graphics.Color.RED
@@ -155,7 +164,7 @@ fun OSMMapView(punti: List<Pair<Segnalazione, GeoPoint>>) {
                 else -> android.graphics.Color.BLUE
             }
             marker.icon.mutate().setTint(color)
-            marker.snippet = "Data: ${info.data}\nLoc: ${info.localita}\nCom: ${info.comune}\nNote: ${info.note}"
+            marker.snippet = "Data: ${info.data}\nLoc: ${info.localita}\nCom: ${info.comune} (${info.prov})\nNote: ${info.note}"
             mapView.overlays.add(marker)
         }
         mapView.invalidate()
@@ -165,27 +174,25 @@ fun OSMMapView(punti: List<Pair<Segnalazione, GeoPoint>>) {
 
 suspend fun leggiExcelIncrementale(
     context: Context, 
+    fileName: String,
+    anno: Int,
     onProgress: (String) -> Unit, 
-    onNewPoint: (Pair<Segnalazione, GeoPoint>) -> Unit,
-    onComplete: () -> Unit
+    onNewPoint: (Pair<Segnalazione, GeoPoint>) -> Unit
 ) = withContext(Dispatchers.IO) {
     val formatter = DataFormatter()
     try {
-        val inputStream: InputStream = context.assets.open("Pipistrelli 2025.xlsx")
+        val inputStream: InputStream = context.assets.open(fileName)
         val workbook = XSSFWorkbook(inputStream)
         val sheet = workbook.getSheetAt(0)
         
         var headerIdx = -1
-        for (i in 0..20) {
+        for (i in 0..25) {
             val r = sheet.getRow(i) ?: continue
-            val firstCell = formatter.formatCellValue(r.getCell(0)).lowercase()
-            if (firstCell.contains("specie") || firstCell.contains("data")) { headerIdx = i; break }
+            val rowText = (0 until r.lastCellNum.toInt()).joinToString { formatter.formatCellValue(r.getCell(it)).lowercase() }
+            if (rowText.contains("specie") || rowText.contains("data")) { headerIdx = i; break }
         }
         
-        if (headerIdx == -1) {
-            withContext(Dispatchers.Main) { onProgress("Errore: Intestazione Excel non trovata") }
-            return@withContext
-        }
+        if (headerIdx == -1) return@withContext
 
         val headerRow = sheet.getRow(headerIdx)
         val colMap = mutableMapOf<String, Int>()
@@ -196,6 +203,7 @@ suspend fun leggiExcelIncrementale(
             if (name.contains("localit")) colMap["loc"] = j
             if (name.contains("comune")) colMap["comune"] = j
             if (name.contains("stato")) colMap["stato"] = j
+            if (name.contains("provin")) colMap["prov"] = j
             if (name.contains("note") || name.contains("condizioni")) colMap["note"] = j
         }
 
@@ -203,14 +211,24 @@ suspend fun leggiExcelIncrementale(
             val row = sheet.getRow(i) ?: continue
             val locRaw = formatter.formatCellValue(row.getCell(colMap["loc"] ?: -1)).trim()
             val comRaw = formatter.formatCellValue(row.getCell(colMap["comune"] ?: -1)).trim()
+            val provRaw = formatter.formatCellValue(row.getCell(colMap["prov"] ?: -1)).trim()
+            
             if (locRaw.isBlank() && comRaw.isBlank()) continue
 
-            val query = if (locRaw.isNotBlank() && locRaw.lowercase() != comRaw.lowercase()) "$locRaw, $comRaw" else comRaw
-            withContext(Dispatchers.Main) { onProgress("Geocodifica: $query") }
+            // Query super precisa per evitare errori (Mirano -> Milano)
+            val queryParts = mutableListOf<String>()
+            if (locRaw.isNotBlank() && locRaw.lowercase() != comRaw.lowercase()) queryParts.add(locRaw)
+            queryParts.add(comRaw)
+            if (provRaw.isNotBlank()) queryParts.add(provRaw)
+            queryParts.add("Veneto")
+            queryParts.add("Italia")
+            
+            val query = queryParts.joinToString(", ")
+            withContext(Dispatchers.Main) { onProgress("Geocodifica: $comRaw...") }
 
             var coords = getCoordinatesFromNominatim(query)
             if (coords == null && locRaw.isNotBlank()) {
-                coords = getCoordinatesFromNominatim(comRaw)
+                coords = getCoordinatesFromNominatim("$comRaw, $provRaw, Veneto, Italia")
             }
             
             if (coords != null) {
@@ -219,10 +237,10 @@ suspend fun leggiExcelIncrementale(
                     Segnalazione(
                         dataStr,
                         formatter.formatCellValue(row.getCell(colMap["specie"] ?: -1)),
-                        locRaw, comRaw,
+                        locRaw, comRaw, provRaw,
                         formatter.formatCellValue(row.getCell(colMap["stato"] ?: -1)),
                         formatter.formatCellValue(row.getCell(colMap["note"] ?: -1)),
-                        coords.first, coords.second
+                        coords.first, coords.second, anno
                     ),
                     GeoPoint(coords.first, coords.second)
                 )
@@ -232,7 +250,6 @@ suspend fun leggiExcelIncrementale(
         }
         workbook.close()
     } catch (e: Exception) { 
-        Log.e("BatMaps", "Errore critico: ${e.message}") 
+        Log.e("BatMaps", "Errore $fileName: ${e.message}")
     }
-    withContext(Dispatchers.Main) { onComplete() }
 }
