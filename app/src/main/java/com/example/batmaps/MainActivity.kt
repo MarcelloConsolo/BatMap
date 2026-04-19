@@ -197,11 +197,15 @@ fun OSMMapView(punti: List<Pair<Segnalazione, GeoPoint>>) {
             val marker = Marker(mapView)
             marker.position = coordinata
             
-            // Titolo in Blu (HTML)
-            marker.title = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-                android.text.Html.fromHtml("<font color='#0000FF'><b>${info.specie}</b></font>", android.text.Html.FROM_HTML_MODE_LEGACY).toString()
-            } else {
-                info.specie
+            // TITOLO IN BLU E GRASSETTO (Custom InfoWindow)
+            marker.title = info.specie
+            marker.infoWindow = object : org.osmdroid.views.overlay.infowindow.MarkerInfoWindow(org.osmdroid.library.R.layout.bonuspack_bubble, mapView) {
+                override fun onOpen(item: Any?) {
+                    super.onOpen(item)
+                    val title = mView.findViewById<android.widget.TextView>(org.osmdroid.library.R.id.bubble_title)
+                    title.setTextColor(android.graphics.Color.BLUE)
+                    title.setTypeface(null, android.graphics.Typeface.BOLD)
+                }
             }
             
             val color = when {
@@ -212,7 +216,7 @@ fun OSMMapView(punti: List<Pair<Segnalazione, GeoPoint>>) {
             }
             marker.icon.mutate().setTint(color)
             
-            // Layout Popup: Provincia sotto la specie, poi i dettagli
+            // Provincia sotto la specie, poi i dettagli
             marker.snippet = "Provincia: ${info.prov}\n" +
                            "Data: ${info.data}\n" +
                            "Comune: ${info.comune}\n" +
@@ -343,17 +347,23 @@ suspend fun leggiExcelIncrementale(
             if (finalCoords != null) {
                 val dataStr = colMap["data"]?.let { idx ->
                     val cell = row.getCell(idx)
-                    if (cell != null && cell.cellType == CellType.NUMERIC && DateUtil.isCellDateFormatted(cell)) {
-                        java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.ITALY).format(cell.dateCellValue)
-                    } else {
-                        formatter.formatCellValue(cell)
-                    }
+                    if (cell != null) {
+                        if (cell.cellType == CellType.NUMERIC) {
+                            // Fix per date che appaiono come numeri (es. 45143)
+                            if (DateUtil.isCellDateFormatted(cell) || cell.numericCellValue > 30000) {
+                                try {
+                                    java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.ITALY).format(cell.dateCellValue)
+                                } catch(e: Exception) { formatter.formatCellValue(cell) }
+                            } else { formatter.formatCellValue(cell) }
+                        } else { formatter.formatCellValue(cell) }
+                    } else ""
                 } ?: ""
+                
                 val specieStr = colMap["specie"]?.let { formatter.formatCellValue(row.getCell(it)) } ?: "Pipistrello"
                 
-                // RICAVO LA PROVINCIA DAL DB LOCALE (come richiesto)
+                // PROVINCIA DAL COMUNE (Sempre, come richiesto)
                 val localResult = ComuniDatabase.cercaDati(comRaw, locRaw, provRaw)
-                val finalProv = if (provRaw.isBlank()) localResult.prov else provRaw
+                val finalProv = localResult.prov
                 
                 val statoStr = colMap["stato"]?.let { formatter.formatCellValue(row.getCell(it)) } ?: ""
                 val noteStr = colMap["note"]?.let { formatter.formatCellValue(row.getCell(it)) } ?: ""
