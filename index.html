@@ -10,12 +10,15 @@
     <style>
         body, html { margin: 0; padding: 0; height: 100%; font-family: sans-serif; overflow: hidden; }
         #map { height: 100vh; width: 100%; z-index: 1; }
+
         .version-tag {
-            position: fixed; top: 15px; right: 15px; background: white;
+            position: fixed; top: 15px; right: 15px;
+            background: white; color: #2c3e50;
             padding: 8px 15px; border-radius: 8px; font-weight: bold;
-            z-index: 1100; box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-            border: 2px solid #2c3e50; color: #2c3e50;
+            z-index: 1100; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            border: 2px solid #2c3e50; font-size: 14px;
         }
+
         .status-overlay {
             position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
             background: rgba(0,0,0,0.8); color: white; padding: 10px 20px;
@@ -23,14 +26,16 @@
             font-size: 0.9em; pointer-events: none;
         }
         .spinner {
-            border: 3px solid #f3f3f3; border-top: 3px solid #e67e22;
+            border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid #e67e22;
             border-radius: 50%; width: 16px; height: 16px;
             animation: spin 1s linear infinite; margin-right: 12px;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .popup-table { width: 100%; border-collapse: collapse; font-size: 0.9em; margin-top: 10px; }
-        .popup-table td { padding: 4px 0; border-bottom: 1px solid #eee; }
-        .label { font-weight: bold; color: #7f8c8d; width: 70px; }
+
+        .popup-table { width: 100%; border-collapse: collapse; margin-top: 5px; font-size: 12px; }
+        .popup-table td { padding: 3px 0; border-bottom: 1px solid #eee; vertical-align: top; }
+        .label { font-weight: bold; color: #7f8c8d; width: 75px; }
+        .stato-header { font-weight: bold; text-transform: uppercase; font-size: 11px; margin-bottom: 4px; display: block; }
     </style>
 </head>
 <body>
@@ -39,7 +44,7 @@
 
 <div id="status" class="status-overlay">
     <div class="spinner"></div>
-    <span id="status-msg">Inizializzazione mappa...</span>
+    <span id="status-msg">Inizializzazione...</span>
 </div>
 
 <div id="map"></div>
@@ -51,40 +56,46 @@
     }).addTo(map);
 
     const localDB = {
-        "mirano": {lat: 45.4925, lon: 12.1128, prov: "VE"},
-        "venezia": {lat: 45.4408, lon: 12.3155, prov: "VE"},
-        "padova": {lat: 45.4064, lon: 11.8768, prov: "PD"},
-        "verona": {lat: 45.4384, lon: 10.9916, prov: "VR"},
-        "vicenza": {lat: 45.5479, lon: 11.5446, prov: "VI"},
-        "treviso": {lat: 45.6669, lon: 12.2431, prov: "TV"},
-        "belluno": {lat: 46.1425, lon: 12.2167, prov: "BL"},
-        "rovigo": {lat: 45.0711, lon: 11.7907, prov: "RO"},
-        "mogliano veneto": {lat: 45.5604, lon: 12.2373, prov: "TV"},
-        "mestre": {lat: 45.4908, lon: 12.2389, prov: "VE"},
-        "pordenone": {lat: 45.9566, lon: 12.6605, prov: "PN"}
+        "mirano": {lat: 45.4925, lon: 12.1128},
+        "venezia": {lat: 45.4408, lon: 12.3155},
+        "padova": {lat: 45.4064, lon: 11.8768},
+        "verona": {lat: 45.4384, lon: 10.9916},
+        "vicenza": {lat: 45.5479, lon: 11.5446},
+        "treviso": {lat: 45.6669, lon: 12.2431},
+        "belluno": {lat: 46.1425, lon: 12.2167},
+        "rovigo": {lat: 45.0711, lon: 11.7907},
+        "mogliano veneto": {lat: 45.5604, lon: 12.2373},
+        "mestre": {lat: 45.4908, lon: 12.2389}
     };
 
-    async function getCoordinates(loc, com, prov) {
-        const comKey = com.toLowerCase().trim();
-        if (!loc && localDB[comKey]) return localDB[comKey];
+    async function getCoordinates(loc, com, prov, latFile, lonFile) {
+        // 1. Priorità assoluta: Coordinate nel file Excel
+        if (latFile && lonFile) {
+            const lt = parseFloat(String(latFile).replace(',', '.'));
+            const ln = parseFloat(String(lonFile).replace(',', '.'));
+            if (!isNaN(lt) && !isNaN(ln)) return { lat: lt, lon: ln, source: 'file' };
+        }
 
+        const comKey = com.toLowerCase().trim();
+        // 2. Database locale per comuni
+        if (!loc && localDB[comKey]) return { ...localDB[comKey], source: 'local' };
+
+        // 3. Nominatim
         try {
             const q = `${loc ? loc + ", " : ""}${com}, ${prov || ""}, Veneto, Italia`;
             const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&email=marcello.consolo@gmail.com`;
             const resp = await fetch(url);
             const data = await resp.json();
+            if (data && data.length > 0) return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), source: 'nominatim' };
 
-            if (data && data.length > 0) return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
-            return localDB[comKey] || null;
-        } catch (e) { return localDB[comKey] || null; }
+            return localDB[comKey] ? { ...localDB[comKey], source: 'local' } : null;
+        } catch (e) { return localDB[comKey] ? { ...localDB[comKey], source: 'local' } : null; }
     }
 
     async function processYear(year) {
         const statusMsg = document.getElementById("status-msg");
         try {
-            statusMsg.innerText = `Caricamento file ${year}...`;
-            const fileName = `Pipistrelli ${year}.xlsx`;
-            const url = `https://raw.githubusercontent.com/marcelloconsolo/BatMaps/main/app/src/main/assets/${fileName}?v=${Date.now()}`;
+            const url = `https://raw.githubusercontent.com/marcelloconsolo/BatMaps/main/app/src/main/assets/Pipistrelli ${year}.xlsx?v=${Date.now()}`;
             const resp = await fetch(url);
             if (!resp.ok) return;
 
@@ -94,13 +105,12 @@
             const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
             let hIdx = -1;
-            for(let i=0; i<Math.min(rows.length, 30); i++) {
-                const rowStr = rows[i].join("").toLowerCase();
-                if(rowStr.includes("specie") || rowStr.includes("data")) { hIdx = i; break; }
+            for(let i=0; i<30; i++) {
+                if(rows[i] && rows[i].join("").toLowerCase().match(/specie|data/)) { hIdx = i; break; }
             }
             if(hIdx === -1) return;
 
-            const headers = rows[hIdx].map(h => String(h || "").toLowerCase());
+            const headers = rows[hIdx].map(h => String(h || "").toLowerCase().trim());
             const colMap = {
                 specie: headers.findIndex(h => h.includes("specie")),
                 data: headers.findIndex(h => h.includes("data")),
@@ -108,25 +118,29 @@
                 comune: headers.findIndex(h => h.includes("comune")),
                 prov: headers.findIndex(h => h.includes("provin") || h.includes("prov.")),
                 stato: headers.findIndex(h => h.includes("stato") || h.includes("condizioni")),
-                note: headers.findIndex(h => h.includes("note"))
+                note: headers.findIndex(h => h.includes("note")),
+                lat: headers.findIndex(h => h === "lat"),
+                lon: headers.findIndex(h => h === "lon" || h === "lng")
             };
 
             for (let i = hIdx + 1; i < rows.length; i++) {
                 const r = rows[i];
+                if (!r || r.length === 0) continue;
+
                 const com = String(r[colMap.comune] || "").trim();
                 const loc = String(r[colMap.loc] || "").trim();
                 const prov = String(r[colMap.prov] || "").trim();
-                if (!com) continue;
+                const stato = String(r[colMap.stato] || "").trim();
+                if (!com && !loc) continue;
 
-                statusMsg.innerText = `[${year}] Elaborazione: ${com}`;
+                statusMsg.innerText = `[${year}] Elaborazione: ${com || loc}`;
 
-                const coords = await getCoordinates(loc, com, prov);
-                if (coords) {
-                    let color = "blue";
-                    const stato = String(r[colMap.stato] || "").toLowerCase();
-                    if (stato.includes("liberato")) color = "green";
-                    else if (stato.includes("morto")) color = "red";
-                    else if (stato.includes("degenza")) color = "yellow";
+                const res = await getCoordinates(loc, com, prov, r[colMap.lat], r[colMap.lon]);
+                if (res) {
+                    let color = "blue", hex = "#3498db";
+                    if (stato.toLowerCase().includes("liberato")) { color = "green"; hex = "#27ae60"; }
+                    else if (stato.toLowerCase().includes("morto")) { color = "red"; hex = "#e74c3c"; }
+                    else if (stato.toLowerCase().includes("degenza")) { color = "yellow"; hex = "#f1c40f"; }
 
                     const icon = new L.Icon({
                         iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
@@ -134,19 +148,28 @@
                         iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
                     });
 
-                    L.marker([coords.lat, coords.lon], { icon }).addTo(map)
-                        .bindPopup(`<b>${r[colMap.specie] || "Pipistrello"} (${year})</b><br><table class="popup-table"><tr><td class="label">Loc:</td><td>${loc || "-"}</td></tr><tr><td class="label">Com:</td><td>${com} (${prov})</td></tr><tr><td class="label">Stato:</td><td>${r[colMap.stato] || "-"}</td></tr></table>`);
+                    const popup = `
+                        <div style="min-width:200px">
+                            <span class="stato-header" style="color:${hex}">${stato || "Segnalazione"}</span>
+                            <b>${r[colMap.specie] || "Pipistrello"} (${year})</b>
+                            <table class="popup-table">
+                                <tr><td class="label">Data:</td><td>${r[colMap.data] || "-"}</td></tr>
+                                <tr><td class="label">Località:</td><td>${loc || "-"}</td></tr>
+                                <tr><td class="label">Comune:</td><td>${com} (${prov})</td></tr>
+                                <tr><td class="label">Note:</td><td>${r[colMap.note] || "-"}</td></tr>
+                            </table>
+                        </div>
+                    `;
+                    L.marker([res.lat, res.lon], { icon }).addTo(map).bindPopup(popup);
                 }
-                if (loc || !localDB[com.toLowerCase()]) await new Promise(r => setTimeout(r, 1200));
+                if (res && res.source === 'nominatim') await new Promise(r => setTimeout(r, 1200));
             }
-        } catch (e) { console.error("Errore anno " + year, e); }
+        } catch (e) { console.error(e); }
     }
 
     async function init() {
         const years = [2022, 2023, 2024, 2025];
-        for (const year of years) {
-            await processYear(year);
-        }
+        for (const year of years) { await processYear(year); }
         document.getElementById("status").style.display = "none";
     }
     init();

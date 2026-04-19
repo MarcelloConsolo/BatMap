@@ -104,30 +104,35 @@ fun BatMapScreen() {
 
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
         Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
-            // 1. LA MAPPA (Deve essere il primo elemento per stare sotto)
+            // 1. LA MAPPA
             OSMMapView(tutteLeSegnalazioni.toList())
 
-            // 2. FINESTRA VERSIONE (In alto a destra)
+            // 2. FINESTRA VERSIONE (Ripristinata come originale)
             Surface(
-                modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
-                color = Color.White.copy(alpha = 0.9f),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp),
+                color = Color.White, // Bianco solido
                 shape = MaterialTheme.shapes.medium,
-                shadowElevation = 6.dp,
+                shadowElevation = 8.dp,
                 border = androidx.compose.foundation.BorderStroke(2.dp, Color(0xFF2c3e50))
             ) {
                 Text(
                     text = "BatMaps 2025 - v18.40",
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    style = MaterialTheme.typography.titleMedium,
                     color = Color(0xFF2c3e50),
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold
                 )
             }
 
-            // 3. STATO CARICAMENTO (In basso)
+            // 3. STATO CARICAMENTO
             if (isLoading) {
                 Surface(
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 80.dp).padding(horizontal = 24.dp),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 80.dp)
+                        .padding(horizontal = 24.dp),
                     color = Color.Black.copy(alpha = 0.8f),
                     shape = MaterialTheme.shapes.medium
                 ) {
@@ -167,7 +172,7 @@ fun OSMMapView(punti: List<Pair<Segnalazione, GeoPoint>>) {
                 else -> android.graphics.Color.BLUE
             }
             marker.icon.mutate().setTint(color)
-            marker.snippet = "Data: ${info.data}\nLoc: ${info.localita}\nCom: ${info.comune} (${info.prov})\nNote: ${info.note}"
+            marker.snippet = "STATO: ${info.stato.uppercase()}\nDATA: ${info.data}\nLOCALITÀ: ${info.localita}\nCOMUNE: ${info.comune} (${info.prov})\nNOTE: ${info.note}"
             mapView.overlays.add(marker)
         }
         mapView.invalidate()
@@ -199,16 +204,22 @@ suspend fun leggiExcelIncrementale(
 
         val headerRow = sheet.getRow(headerIdx)
         val colMap = mutableMapOf<String, Int>()
-        for (j in 0 until headerRow.lastCellNum.toInt()) {
-            val name = formatter.formatCellValue(headerRow.getCell(j)).lowercase()
+        for (j in 0 until (headerRow?.lastCellNum?.toInt() ?: 0)) {
+            val cell = headerRow?.getCell(j) ?: continue
+            val name = formatter.formatCellValue(cell).lowercase().trim()
             if (name.contains("specie")) colMap["specie"] = j
             if (name.contains("data")) colMap["data"] = j
-            if (name.contains("localit")) colMap["loc"] = j
+            if (name.contains("localit") || name.contains("indirizzo")) colMap["loc"] = j
             if (name.contains("comune")) colMap["comune"] = j
             if (name.contains("stato")) colMap["stato"] = j
-            if (name.contains("provin")) colMap["prov"] = j
+            if (name.contains("provin") || name.contains("prov.")) colMap["prov"] = j
             if (name.contains("note") || name.contains("condizioni")) colMap["note"] = j
+            if (name.contains("lat")) colMap["lat"] = j
+            if (name.contains("lon") || name.contains("lng")) colMap["lon"] = j
         }
+        
+        // Se manca la colonna comune, proviamo a usare la prima disponibile come fallback
+        if (colMap["comune"] == null) colMap["comune"] = colMap["loc"] ?: 0
 
         for (i in (headerIdx + 1)..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
@@ -220,39 +231,50 @@ suspend fun leggiExcelIncrementale(
             
             if (comRaw.isBlank()) continue
 
-            // Query super precisa per evitare errori (Mirano -> Milano)
-            val queryParts = mutableListOf<String>()
-            if (locRaw.isNotBlank() && locRaw.lowercase() != comRaw.lowercase()) queryParts.add(locRaw)
-            queryParts.add(comRaw)
-            if (provRaw.isNotBlank()) queryParts.add(provRaw)
-            queryParts.add("Veneto")
-            queryParts.add("Italia")
+            // 1. TENTATIVO COORDINATE GIA' PRESENTI NEL FILE (Istantaneo)
+            var coords: Pair<Double, Double>? = null
+            val latRaw = colMap["lat"]?.let { formatter.formatCellValue(row.getCell(it)) } ?: ""
+            val lonRaw = colMap["lon"]?.let { formatter.formatCellValue(row.getCell(it)) } ?: ""
             
-            val query = queryParts.joinToString(", ")
-            withContext(Dispatchers.Main) { onProgress("Geocodifica: $comRaw...") }
+            if (latRaw.isNotBlank() && lonRaw.isNotBlank()) {
+                val lLat = latRaw.replace(",", ".").toDoubleOrNull()
+                val lLon = lonRaw.replace(",", ".").toDoubleOrNull()
+                if (lLat != null && lLon != null) {
+                    coords = Pair(lLat, lLon)
+                }
+            }
 
-            // 1. Tentativo con Database Locale (veloce e sicuro per i comuni)
-            val localResult = ComuniDatabase.cercaDati(comRaw, locRaw, provRaw)
-            var coords: Pair<Double, Double>?
+            if (coords == null) {
+                // 2. Tentativo con Database Locale (veloce e sicuro per i comuni)
+                val localResult = ComuniDatabase.cercaDati(comRaw, locRaw, provRaw)
 
-            // Se non c'è una via specifica, usiamo i dati certi del DB locale
-            if (locRaw.isBlank() || locRaw.lowercase() == comRaw.lowercase()) {
-                coords = Pair(localResult.lat, localResult.lon)
-            } else {
-                // 2. Tentativo con Nominatim per indirizzo specifico
-                val nominatimCoords = getCoordinatesFromNominatim(query)
-                
-                if (nominatimCoords == null) {
-                    // 3. Fallback: se la via fallisce, usiamo il centro del comune dal DB
+                // Se non c'è una via specifica, usiamo i dati certi del DB locale
+                if (locRaw.isBlank() || locRaw.lowercase() == comRaw.lowercase()) {
                     coords = Pair(localResult.lat, localResult.lon)
                 } else {
-                    coords = nominatimCoords
-                    // Rispetta la policy di Nominatim solo se abbiamo fatto una richiesta web
-                    delay(1200)
+                    // 3. Tentativo con Nominatim per indirizzo specifico
+                    val queryParts = mutableListOf<String>()
+                    if (locRaw.isNotBlank()) queryParts.add(locRaw)
+                    queryParts.add(comRaw)
+                    if (provRaw.isNotBlank()) queryParts.add(provRaw)
+                    queryParts.add("Veneto, Italia")
+                    val query = queryParts.joinToString(", ")
+
+                    val nominatimCoords = getCoordinatesFromNominatim(query)
+                    
+                    if (nominatimCoords == null) {
+                        // 4. Fallback: se la via fallisce, usiamo il centro del comune dal DB
+                        coords = Pair(localResult.lat, localResult.lon)
+                    } else {
+                        coords = nominatimCoords
+                        // Rispetta la policy di Nominatim solo se abbiamo fatto una richiesta web
+                        delay(1200)
+                    }
                 }
             }
             
-            if (coords != null) {
+            val finalCoords = coords
+            if (finalCoords != null) {
                 val dataStr = colMap["data"]?.let { formatter.formatCellValue(row.getCell(it)) } ?: ""
                 val specieStr = colMap["specie"]?.let { formatter.formatCellValue(row.getCell(it)) } ?: "Pipistrello"
                 val statoStr = colMap["stato"]?.let { formatter.formatCellValue(row.getCell(it)) } ?: ""
@@ -261,9 +283,9 @@ suspend fun leggiExcelIncrementale(
                 val point = Pair(
                     Segnalazione(
                         dataStr, specieStr, locRaw, comRaw, provRaw, statoStr, noteStr,
-                        coords.first, coords.second, anno
+                        finalCoords.first, finalCoords.second, anno
                     ),
-                    GeoPoint(coords.first, coords.second)
+                    GeoPoint(finalCoords.first, finalCoords.second)
                 )
                 withContext(Dispatchers.Main) { onNewPoint(point) }
             }
