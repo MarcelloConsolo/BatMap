@@ -22,9 +22,6 @@ def fix_excel_files():
             continue
 
         print(f"--- Elaborazione {file_name} ---")
-        # Backup
-        shutil.copy(file_name, f'{file_name}.bak')
-
         wb = load_workbook(file_name)
         ws = wb.active
 
@@ -49,26 +46,32 @@ def fix_excel_files():
             print(f"Errore: colonna Comune non trovata in {file_name}")
             continue
 
-        count = 0
+        count_prov = 0
+        count_coords = 0
         for r in range(header_row + 1, ws.max_row + 1):
             comune = str(ws.cell(row=r, column=col_map['comune']).value or "").strip().lower()
-            prov_cell = ws.cell(row=r, column=col_map.get('prov', 100)) # fallback se manca colonna
 
-            # Se la provincia è vuota, la cerchiamo nel DB
             if comune in db_comuni:
                 info = db_comuni[comune]
-                # Se la colonna provincia esiste ed è vuota, la riempiamo
-                if 'prov' in col_map:
-                    curr_prov = str(ws.cell(row=r, column=col_map['prov']).value or "").strip()
-                    if curr_prov in ['', 'None', 'nan', '-']:
-                        ws.cell(row=r, column=col_map['prov']).value = info['prov'].upper()
-                        count += 1
 
-                # Se mancano le coordinate, mettiamo quelle del comune
-                if 'lat' in col_map and ws.cell(row=r, column=col_map['lat']).value is None:
-                    ws.cell(row=r, column=col_map['lat']).value = info['lat']
-                if 'lon' in col_map and ws.cell(row=r, column=col_map['lon']).value is None:
-                    ws.cell(row=r, column=col_map['lon']).value = info['lon']
+                # FORZA la provincia corretta se quella attuale è mancante o errata
+                if 'prov' in col_map:
+                    curr_prov = str(ws.cell(row=r, column=col_map['prov']).value or "").strip().upper()
+                    if curr_prov != info['prov'].upper():
+                        ws.cell(row=r, column=col_map['prov']).value = info['prov'].upper()
+                        count_prov += 1
+
+                # VERIFICA COORDINATE: Se mancano o sono palesemente 0, le ripristiniamo dal DB del comune
+                if 'lat' in col_map:
+                    lat_val = ws.cell(row=r, column=col_map['lat']).value
+                    if lat_val is None or lat_val == 0 or str(lat_val).strip() == "":
+                        ws.cell(row=r, column=col_map['lat']).value = info['lat']
+                        count_coords += 1
+                if 'lon' in col_map:
+                    lon_val = ws.cell(row=r, column=col_map['lon']).value
+                    if lon_val is None or lon_val == 0 or str(lon_val).strip() == "":
+                        ws.cell(row=r, column=col_map['lon']).value = info['lon']
+                        count_coords += 1
 
         wb.save(file_name)
         # Copia anche in assets e web
@@ -76,7 +79,7 @@ def fix_excel_files():
         if os.path.exists('web'):
             shutil.copy(file_name, f'web/{file_name}')
 
-        print(f"Completato {file_name}: aggiunte {count} province.")
+        print(f"Completato {file_name}: aggiornate {count_prov} province e {count_coords} coordinate.")
 
 if __name__ == "__main__":
     fix_excel_files()

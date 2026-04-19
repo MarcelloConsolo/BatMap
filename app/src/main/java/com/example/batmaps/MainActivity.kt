@@ -345,10 +345,13 @@ suspend fun leggiExcelIncrementale(
             
             val finalCoords = coords
             if (finalCoords != null) {
-                // RICAVO LA PROVINCIA DAL COMUNE (Sempre, come richiesto)
-                // Cerchiamo nel DB locale usando il comune dell'Excel
+                // RICAVO LA PROVINCIA DAL COMUNE (Sempre, dando priorità al DB locale per evitare campi vuoti)
                 val localResult = ComuniDatabase.cercaDati(comRaw, locRaw, provRaw)
-                val finalProv = if (localResult.prov.isNotBlank()) localResult.prov else provRaw
+                
+                // Forza la provincia dal DB se quella dell'Excel è vuota o troppo corta
+                val finalProv = if (localResult.prov.length >= 2) localResult.prov else {
+                    if (provRaw.length >= 2) provRaw else ""
+                }
                 
                 val dataStr = colMap["data"]?.let { idx ->
                     val cell = row.getCell(idx)
