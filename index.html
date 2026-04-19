@@ -11,7 +11,6 @@
         body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
         #map { height: 100vh; width: 100%; z-index: 1; }
 
-        /* FINESTRA STATISTICHE (Top Right - come immagine) */
         .stats-box {
             position: fixed; top: 15px; right: 15px;
             background: white; padding: 12px 18px; border-radius: 5px;
@@ -22,7 +21,6 @@
         .dot { width: 8px; height: 8px; background: #2ecc71; border-radius: 50%; margin-right: 6px; }
         .total-count { font-weight: bold; font-size: 14px; color: #27ae60; margin-top: 4px; }
 
-        /* LEGENDA (Bottom Left - come immagine) */
         .legenda {
             position: fixed; bottom: 30px; left: 15px;
             background: white; padding: 12px; border-radius: 5px;
@@ -33,11 +31,11 @@
         .legenda-item { display: flex; align-items: center; margin-bottom: 3px; }
         .legenda-color { width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
 
-        /* POPUP (Come immagine) */
         .popup-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
         .popup-table td { padding: 4px 0; border-bottom: 1px solid #f2f2f2; vertical-align: top; }
         .label { color: #888; width: 85px; }
         .val { color: #333; font-weight: 500; }
+        .specie-title { color: blue; font-weight: bold; font-size: 15px; }
     </style>
 </head>
 <body>
@@ -63,7 +61,17 @@
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: 'BatMaps' }).addTo(map);
 
     let totalPoints = 0;
-    const localDB = { "mirano": {lat: 45.4925, lon: 12.1128}, "mogliano veneto": {lat: 45.5604, lon: 12.2373} };
+    // Piccolo database per ricavare la provincia dal comune se manca
+    const provDB = {
+        "mirano": "VE", "mogliano veneto": "TV", "vicenza": "VI", "padova": "PD", "venezia": "VE",
+        "treviso": "TV", "verona": "VR", "belluno": "BL", "rovigo": "RO", "milano": "MI", "bergamo": "BG"
+    };
+
+    function excelDateToJS(serial) {
+        if (typeof serial !== 'number') return serial;
+        const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
+        return date.toLocaleDateString('it-IT');
+    }
 
     async function getCoordinates(loc, com, prov, latF, lonF) {
         if (latF && lonF) {
@@ -71,15 +79,13 @@
             const ln = parseFloat(String(lonF).replace(',', '.'));
             if (!isNaN(lt) && !isNaN(ln)) return { lat: lt, lon: ln, src: 'file' };
         }
-        const cKey = com.toLowerCase().trim();
-        if ((!loc || loc.toLowerCase() === cKey) && localDB[cKey]) return { ...localDB[cKey], src: 'local' };
         try {
             const q = `${loc ? loc + ", " : ""}${com}, ${prov || ""}, Italia`;
             const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=it&email=marcello.consolo@gmail.com`);
             const data = await resp.json();
             if (data && data.length > 0) return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), src: 'web' };
-            return localDB[cKey] ? { ...localDB[cKey], src: 'local' } : null;
-        } catch (e) { return localDB[cKey] ? { ...localDB[cKey], src: 'local' } : null; }
+            return null;
+        } catch (e) { return null; }
     }
 
     async function processYear(year) {
@@ -115,7 +121,11 @@
                 const loc = String(r[m.lc] || "").trim();
                 if (!com && !loc) continue;
 
-                const res = await getCoordinates(loc, com, r[m.pr], r[m.la], r[m.lo]);
+                // Ricavo la provincia dal comune se manca
+                let prov = String(r[m.pr] || "").trim();
+                if (!prov && provDB[com.toLowerCase()]) prov = provDB[com.toLowerCase()];
+
+                const res = await getCoordinates(loc, com, prov, r[m.la], r[m.lo]);
                 if (res) {
                     totalPoints++;
                     document.getElementById("total-val").innerText = `Totale: ${totalPoints}`;
@@ -131,14 +141,16 @@
                         iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
                     });
 
+                    const dataFormattata = excelDateToJS(r[m.dt]);
+
                     const pop = `
                         <div style="min-width:230px">
-                            <b style="font-size:14px">${r[m.sp] || "Pipistrello"}</b>
-                            <div style="font-size:11px; color:#999; margin-bottom:5px">Segnalazione del ${r[m.dt] || "-"}</div>
+                            <div class="specie-title">${r[m.sp] || "Pipistrello"}</div>
+                            <div style="font-size:11px; color:#999; margin-bottom:5px">Segnalazione del ${dataFormattata || "-"}</div>
                             <table class="popup-table">
-                                <tr><td class="label">Località:</td><td class="val">${loc || "-"}</td></tr>
+                                <tr><td class="label">Provincia:</td><td class="val">${prov || "-"}</td></tr>
                                 <tr><td class="label">Comune:</td><td class="val">${com}</td></tr>
-                                <tr><td class="label">Provincia:</td><td class="val">${r[m.pr] || "-"}</td></tr>
+                                <tr><td class="label">Località:</td><td class="val">${loc || "-"}</td></tr>
                                 <tr><td class="label">Stato:</td><td class="val">${r[m.st] || "-"}</td></tr>
                                 <tr><td class="label">Condizioni:</td><td class="val">${r[m.nt] || "-"}</td></tr>
                             </table>
