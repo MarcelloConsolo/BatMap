@@ -15,7 +15,8 @@
             position: fixed; top: 15px; right: 15px;
             background: white; padding: 12px 18px; border-radius: 5px;
             z-index: 1100; border: 1px solid #ccc; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            min-width: 180px;
+            width: fit-content;
+            max-width: 300px;
         }
         .stats-title { font-weight: bold; font-size: 15px; color: #333; margin-bottom: 2px; }
         .sync-status { display: flex; align-items: center; font-size: 12px; color: #666; }
@@ -75,6 +76,7 @@
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: 'BatMap' }).addTo(map);
 
     let allMarkers = [];
+    const occupiedPositions = {};
     const years = [2022, 2023, 2024, 2025];
     const yearSelect = document.getElementById("year-select");
     const specieSelect = document.getElementById("specie-select");
@@ -120,8 +122,6 @@
         return day + "/" + month + "/" + utcDate.getFullYear();
     }
 
-    const provDB = { "mirano": "VE", "mogliano veneto": "TV", "vicenza": "VI", "padova": "PD", "venezia": "VE" }; // ... esteso internamente
-
     async function processYear(year) {
         try {
             const url = "https://raw.githubusercontent.com/marcelloconsolo/BatMap/main/app/src/main/assets/Pipistrelli " + year + ".xlsx?v=" + Date.now();
@@ -162,12 +162,6 @@
                     else if (st.includes("morto")) col="red";
                     else if (st.includes("degenza")) col="yellow";
 
-                    const icon = new L.Icon({
-                        iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-" + col + ".png",
-                        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-                        iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
-                    });
-
                     const dataFormattata = excelDateToJS(r[m.dt]);
                     let oraFormattata = "";
                     if (m.ora !== -1 && r[m.ora]) {
@@ -188,26 +182,43 @@
                     const specieName = specieNameFixed.charAt(0).toUpperCase() + specieNameFixed.slice(1).toLowerCase();
 
                     if (!seenSpecies.has(specieName.toLowerCase())) {
-                        const currentSelection = specieSelect.value;
                         seenSpecies.add(specieName.toLowerCase());
                         const opt = document.createElement("option");
                         opt.value = specieName;
                         opt.innerText = specieName;
                         specieSelect.appendChild(opt);
-
                         const options = Array.from(specieSelect.options);
-                        const first = options.shift(); // Prende "Tutte le specie"
+                        const first = options.shift();
                         options.sort((a,b) => a.text.localeCompare(b.text));
-
                         specieSelect.innerHTML = "";
                         specieSelect.appendChild(first);
                         options.forEach(o => specieSelect.appendChild(o));
-
-                        // Ripristina la selezione o forza "all" se era la prima volta
-                        specieSelect.value = currentSelection || "all";
+                        specieSelect.value = "all";
                     }
 
-                    const pop = '<div style="min-width:230px"><div class="popup-header"><div class="specie-title">' + specieName + '</div>' +
+                    // Logica di spostamento (spiral jitter)
+                    let finalLat = lat;
+                    let finalLon = lon;
+                    const posKey = lat.toFixed(6) + "," + lon.toFixed(6);
+                    if (occupiedPositions[posKey]) {
+                        const count = occupiedPositions[posKey];
+                        const angle = count * 0.8;
+                        const radius = 0.00015 * count; // Spostamento leggero ma visibile
+                        finalLat += Math.cos(angle) * radius;
+                        finalLon += Math.sin(angle) * radius;
+                        occupiedPositions[posKey]++;
+                    } else {
+                        occupiedPositions[posKey] = 1;
+                    }
+
+                    const icon = new L.Icon({
+                        iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-" + col + ".png",
+                        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                        iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
+                    });
+
+                    const popContent = '<div style="min-width:230px">' +
+                                '<div class="popup-header"><div class="specie-title">' + specieName + '</div>' +
                                 '<div class="data-subtitle">Segnalazione del ' + dataFormattata + oraFormattata + '</div></div>' +
                                 '<table class="popup-table">' +
                                 '<tr><td class="label">Località:</td><td class="val">' + (r[m.lc] || "-") + '</td></tr>' +
@@ -217,7 +228,7 @@
                                 '<tr><td class="label">Condizioni:</td><td class="val">' + (r[m.nt] || "-") + '</td></tr>' +
                                 '</table></div>';
 
-                    const marker = L.marker([lat, lon], { icon }).bindPopup(pop);
+                    const marker = L.marker([finalLat, finalLon], { icon }).bindPopup(popContent);
                     allMarkers.push({ year, marker, specie: specieName });
                     marker.addTo(map);
                 }
