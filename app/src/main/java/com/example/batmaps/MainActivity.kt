@@ -252,7 +252,7 @@ fun OSMMapView(punti: List<Pair<Segnalazione, GeoPoint>>) {
             }
             
             val color = when {
-                info.stato.lowercase().contains("liberato") -> android.graphics.Color.GREEN
+                info.stato.lowercase().let { it.contains("liberato") || it.contains("madre") } -> android.graphics.Color.GREEN
                 info.stato.lowercase().contains("morto") -> android.graphics.Color.RED
                 info.stato.lowercase().contains("degenza") -> android.graphics.Color.YELLOW
                 else -> android.graphics.Color.BLUE
@@ -313,6 +313,7 @@ suspend fun leggiExcelIncrementale(
             
             if (name.contains("specie")) colMap["specie"] = j
             if (name.contains("data")) colMap["data"] = j
+            if (name == "ora") colMap["ora"] = j
             if (name.contains("localit") || name.contains("indirizzo") || name.contains("via")) colMap["loc"] = j
             if (name.contains("comune") || name.contains("citt") || name.contains("luogo")) colMap["comune"] = j
             if (name.contains("prov") || name == "pr") colMap["prov"] = j
@@ -398,16 +399,45 @@ suspend fun leggiExcelIncrementale(
                 
                 val dataStr = colMap["data"]?.let { idx ->
                     val cell = row.getCell(idx)
-                    if (cell != null) {
-                        if (cell.cellType == CellType.NUMERIC) {
-                            if (DateUtil.isCellDateFormatted(cell) || cell.numericCellValue > 30000) {
-                                try {
-                                    java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.ITALY).format(cell.dateCellValue)
-                                } catch(e: Exception) { formatter.formatCellValue(cell) }
-                            } else { formatter.formatCellValue(cell) }
-                        } else { formatter.formatCellValue(cell) }
-                    } else ""
+                    if (cell == null) ""
+                    else if (cell.cellType == CellType.NUMERIC) {
+                        try {
+                            val d = DateUtil.getJavaDate(cell.numericCellValue, true)
+                            java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.ITALY).apply {
+                                timeZone = java.util.TimeZone.getTimeZone("UTC")
+                            }.format(d)
+                        } catch (e: Exception) { formatter.formatCellValue(cell) }
+                    } else formatter.formatCellValue(cell)
                 } ?: ""
+
+                val oraStr = colMap["ora"]?.let { idx ->
+                    val cell = row.getCell(idx)
+                    if (cell == null) ""
+                    else if (cell.cellType == CellType.NUMERIC) {
+                        try {
+                            val valNum = cell.numericCellValue
+                            // Se il numero è > 1, probabilmente contiene anche la data, prendiamo solo la frazione
+                            val soloOra = valNum % 1.0
+                            val d = DateUtil.getJavaDate(soloOra, true)
+                            java.text.SimpleDateFormat("HH:mm", java.util.Locale.ITALY).apply {
+                                timeZone = java.util.TimeZone.getTimeZone("UTC")
+                            }.format(d)
+                        } catch (e: Exception) { formatter.formatCellValue(cell) }
+                    } else {
+                        val v = formatter.formatCellValue(cell).trim()
+                        if (v.contains(":")) {
+                            val parts = v.split(":")
+                            if (parts.size >= 2) "${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}" else v
+                        } else v
+                    }
+                } ?: ""
+
+                // Evitiamo di scrivere "ora 00:00" se l'ora è effettivamente mancante o se viene ripetuta
+                val dataFinale = if (oraStr.isNotBlank() && oraStr != "00:00") {
+                    "$dataStr ora $oraStr"
+                } else {
+                    dataStr
+                }
                 
                 val specieStr = colMap["specie"]?.let { formatter.formatCellValue(row.getCell(it)) } ?: "Pipistrello"
                 val statoStr = colMap["stato"]?.let { formatter.formatCellValue(row.getCell(it)) } ?: ""
@@ -415,7 +445,7 @@ suspend fun leggiExcelIncrementale(
 
                 val point = Pair(
                     Segnalazione(
-                        dataStr, specieStr, locRaw, comRaw, finalProv, statoStr, noteStr,
+                        dataFinale, specieStr, locRaw, comRaw, finalProv, statoStr, noteStr,
                         finalCoords.first, finalCoords.second, anno
                     ),
                     GeoPoint(finalCoords.first, finalCoords.second)

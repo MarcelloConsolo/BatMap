@@ -113,8 +113,19 @@
     function excelDateToJS(serial) {
         if (!serial) return "-";
         if (typeof serial !== 'number') return String(serial);
+
+        // Excel usa il sistema di date 1900 (giorni dal 30/12/1899)
         const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
-        return date.toLocaleDateString('it-IT');
+
+        // Compensiamo l'offset del fuso orario locale del browser per leggere l'ora "nominale" di Excel
+        const userOffset = date.getTimezoneOffset() * 60000;
+        const utcDate = new Date(date.getTime() + userOffset);
+
+        const day = String(utcDate.getDate()).padStart(2, '0');
+        const month = String(utcDate.getMonth() + 1).padStart(2, '0');
+        const year = utcDate.getFullYear();
+
+        return day + "/" + month + "/" + year;
     }
 
     function getProvincia(comune) {
@@ -149,6 +160,7 @@
             const m = {
                 sp: h.findIndex(x => x.includes("specie")),
                 dt: h.findIndex(x => x.includes("data")),
+                ora: h.findIndex(x => x === "ora"),
                 lc: h.findIndex(x => x.includes("localit") || x.includes("indirizzo") || x.includes("via")),
                 cm: h.findIndex(x => x.includes("comune") || x.includes("citt")),
                 pr: h.findIndex(x => x.includes("prov") || x === "pr"),
@@ -180,11 +192,28 @@
                     });
 
                     const dataFormattata = excelDateToJS(r[m.dt]);
+                    let oraFormattata = "";
+                    if (m.ora !== -1 && r[m.ora]) {
+                        if (typeof r[m.ora] === 'number') {
+                            const dateOra = new Date(Math.round((r[m.ora] - 25569) * 86400 * 1000));
+                            const userOffset = dateOra.getTimezoneOffset() * 60000;
+                            const utcOra = new Date(dateOra.getTime() + userOffset);
+                            const hh = String(utcOra.getHours()).padStart(2, '0');
+                            const mm = String(utcOra.getMinutes()).padStart(2, '0');
+                            oraFormattata = " ora " + hh + ":" + mm;
+                        } else {
+                            let s = String(r[m.ora]).trim();
+                            if (s.length > 5) s = s.substring(0, 5);
+                            oraFormattata = " ora " + s;
+                        }
+                    }
+
+                    const dataFinale = dataFormattata + oraFormattata;
                     const prov = r[m.pr] || getProvincia(com) || "-";
 
                     const pop = '<div style="min-width:230px">' +
                                 '<div class="specie-title">' + (r[m.sp] || "Pipistrello") + '</div>' +
-                                '<div style="font-size:11px; color:#999; margin-bottom:5px">Segnalazione del ' + dataFormattata + '</div>' +
+                                '<div style="font-size:11px; color:#999; margin-bottom:5px">Segnalazione del ' + dataFinale + '</div>' +
                                 '<table class="popup-table">' +
                                 '<tr><td class="label">Località:</td><td class="val">' + (loc || "-") + '</td></tr>' +
                                 '<tr><td class="label">Comune:</td><td class="val">' + (com || "-") + '</td></tr>' +
