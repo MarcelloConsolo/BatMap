@@ -240,14 +240,21 @@ fun OSMMapView(punti: List<Pair<Segnalazione, GeoPoint>>) {
             val marker = Marker(mapView)
             marker.position = coordinata
             
-            // TITOLO IN BLU E GRASSETTO (Custom InfoWindow)
-            marker.title = info.specie
+            // TITOLO E DATA CENTRATI (Custom InfoWindow)
             marker.infoWindow = object : org.osmdroid.views.overlay.infowindow.MarkerInfoWindow(org.osmdroid.library.R.layout.bonuspack_bubble, mapView) {
                 override fun onOpen(item: Any?) {
                     super.onOpen(item)
                     val title = mView.findViewById<android.widget.TextView>(org.osmdroid.library.R.id.bubble_title)
-                    title.setTextColor(android.graphics.Color.BLUE)
-                    title.setTypeface(null, android.graphics.Typeface.BOLD)
+                    
+                    val s = android.text.SpannableString("${info.specie}\nSegnalazione del ${info.data}")
+                    s.setSpan(android.text.style.ForegroundColorSpan(android.graphics.Color.BLUE), 0, info.specie.length, 0)
+                    s.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, info.specie.length, 0)
+                    s.setSpan(android.text.style.ForegroundColorSpan(android.graphics.Color.GRAY), info.specie.length + 1, s.length, 0)
+                    s.setSpan(android.text.style.RelativeSizeSpan(0.8f), info.specie.length + 1, s.length, 0)
+                    
+                    title.text = s
+                    title.gravity = android.view.Gravity.CENTER
+                    title.setPadding(0, 15, 0, 15) // Centratura verticale tra bordo e inizio descrizione
                 }
             }
             
@@ -259,11 +266,10 @@ fun OSMMapView(punti: List<Pair<Segnalazione, GeoPoint>>) {
             }
             marker.icon.mutate().setTint(color)
             
-            // Ordine popup richiesto: Località, Comune, Provincia
+            // Ordine popup richiesto: Località, Comune, Provincia (Data spostata nel titolo)
             marker.snippet = "Località: ${info.localita}\n" +
                            "Comune: ${info.comune}\n" +
                            "Provincia: ${info.prov}\n" +
-                           "Data: ${info.data}\n" +
                            "Stato: ${info.stato}\n" +
                            "Condizioni: ${info.note}"
             
