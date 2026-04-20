@@ -1,4 +1,4 @@
-package com.example.batmaps
+package com.example.batmap
 
 import org.junit.Test
 

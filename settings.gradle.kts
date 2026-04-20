@@ -22,6 +22,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "BatMaps"
+rootProject.name = "BatMap"
 include(":app")
  

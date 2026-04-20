@@ -33,7 +33,7 @@ def upload_to_github():
 
         # Commit
         print("Commit...")
-        subprocess.run([git_path, "commit", "-m", "Aggiornamento automatico BatMaps"], check=False)
+        subprocess.run([git_path, "commit", "-m", "Aggiornamento automatico BatMap"], check=False)
 
         # Push esplicito su origin main
         print("Caricamento (push)...")

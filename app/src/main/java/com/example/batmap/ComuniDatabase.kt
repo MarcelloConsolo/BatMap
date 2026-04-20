@@ -1,4 +1,4 @@
-package com.example.batmaps
+package com.example.batmap
 
 import android.content.Context
 import android.util.Log

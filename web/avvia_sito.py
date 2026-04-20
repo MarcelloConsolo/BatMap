@@ -21,7 +21,7 @@ Handler = http.server.SimpleHTTPRequestHandler
 my_ip = get_ip()
 
 print("\n" + "="*50)
-print(f"🚀 SERVER BATMAPS AVVIATO!")
+print(f"🚀 SERVER BATMAP AVVIATO!")
 print(f"Lo puoi vedere sul tuo PC qui: http://localhost:{PORT}")
 print(f"Lo puoi vedere dagli altri dispositivi qui: http://{my_ip}:{PORT}")
 print("="*50)

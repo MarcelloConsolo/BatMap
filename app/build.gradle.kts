@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.batmaps"
+    namespace = "com.example.batmap"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -12,7 +12,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.batmaps"
+        applicationId = "com.example.batmap"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

@@ -1,4 +1,4 @@
-package com.example.batmaps.ui.theme
+package com.example.batmap.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
